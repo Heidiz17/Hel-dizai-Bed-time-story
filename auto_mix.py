@@ -1,6 +1,7 @@
 import os
 import re
 import asyncio
+import sys
 import time
 import edge_tts
 from pydub import AudioSegment
@@ -38,7 +39,7 @@ async def generate_tts(text, voice, output_mp3):
     if not clean_text:
         return False
 
-    # 加強版重試 8 次，解決女聲引擎偶發性連線失敗問題
+    # 強力重試 8 次，解決女聲 API 連線問題
     for attempt in range(8):
         try:
             communicate = edge_tts.Communicate(clean_text, voice, rate='-20%')
@@ -101,6 +102,7 @@ def mix_chapter(text_file, gender, bg_music_type, output_filename):
         combined_voice += raw_voice + AudioSegment.silent(duration=1500)
         combined_bg += seg_bg
 
+    # 清理臨時檔
     for t_file in created_temp_files:
         if os.path.exists(t_file):
             os.remove(t_file)
@@ -109,7 +111,7 @@ def mix_chapter(text_file, gender, bg_music_type, output_filename):
         print(f"❌ {gender} ({voice}) 語音生成失敗。")
         return
 
-    # 結尾自然淡出
+    # 結尾自然淡出 (Fade Out 2 秒)
     total_dur = len(combined_voice) + 3000
     final_bg = combined_bg[:total_dur]
     
@@ -125,13 +127,10 @@ def mix_chapter(text_file, gender, bg_music_type, output_filename):
 
 if __name__ == "__main__":
     if os.path.exists("input.txt"):
-        print("⚡ 1/2 正在生成 P仔 男聲版 (雲傑 - 高清原聲 -20%語速)...")
-        mix_chapter("input.txt", "boy", "calm", "genesis_ch1_Pboy.mp3")
+        # 接收外部傳入參數 (boy 或 girl)
+        target_gender = sys.argv[1] if len(sys.argv) > 1 else 'boy'
+        output_file = f"genesis_ch1_P{target_gender}.mp3"
         
-        print("⏳ 避開伺服器頻率限制，休息 6 秒...")
-        time.sleep(6)
-        
-        print("⚡ 2/2 正在生成 P女 女聲版 (小明 - 高清原聲 -20%語速)...")
-        mix_chapter("input.txt", "girl", "calm", "genesis_ch1_Pgirl.mp3")
-        
-        print("🎉 雙版本高清純淨混音完成！")
+        print(f"⚡ 正在專注生成 P_{target_gender} 完整混音版...")
+        mix_chapter("input.txt", target_gender, "calm", output_file)
+        print(f"🎉 P_{target_gender} 混音完美完成！")
