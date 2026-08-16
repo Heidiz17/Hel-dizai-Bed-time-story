@@ -63,11 +63,13 @@ def mix_chapter(text_file, gender, output_filename):
     with open(text_file, 'r', encoding='utf-8') as f:
         raw_content = f.read()
 
-    # 從 txt 第一行自動讀取背景音樂控制標籤
+    # 1. 精準比對 BGM 標籤
     bg_music_type = 'calm'
-    bgm_match = re.search(r'\[BGM:\s*(happy|calm|sad)\]', raw_content, re.IGNORECASE)
+    bgm_match = re.search(r'\[BGM\s*:\s*(happy|calm|sad)\]', raw_content, re.IGNORECASE)
     if bgm_match:
         bg_music_type = bgm_match.group(1).lower()
+
+    print(f"🎵 偵測到背景音樂類型: {bg_music_type}")
 
     voice = VOICE_MAP.get(gender, 'zh-HK-WanLungNeural')
     
@@ -80,7 +82,7 @@ def mix_chapter(text_file, gender, output_filename):
     for part in parts:
         if not part.strip():
             continue
-        if part.startswith('[BGM:'):
+        if re.match(r'\[BGM\s*:', part, re.IGNORECASE):
             continue
         if part in TAG_AUDIO_MAP or part.startswith('['):
             current_tag = part
@@ -105,11 +107,11 @@ def mix_chapter(text_file, gender, output_filename):
         raw_voice = AudioSegment.from_file(temp_file)
         seg_dur = len(raw_voice) + 1500
         
-        # 音效切換：淡入淡出順暢銜接，不重疊
-        a_file = TAG_AUDIO_MAP.get(tag, 'fire.mp3')
+        # 音效：沒比對到就純靜音，絕不誤載 fire.mp3
+        a_file = TAG_AUDIO_MAP.get(tag, None)
         seg_bg = AudioSegment.silent(duration=seg_dur)
 
-        if os.path.exists(a_file):
+        if a_file and os.path.exists(a_file):
             snd = AudioSegment.from_file(a_file)
             snd_looped = (snd * (int(seg_dur / len(snd)) + 1))[:seg_dur] - 22
             seg_bg = snd_looped.fade_in(500).fade_out(1000)
@@ -125,21 +127,24 @@ def mix_chapter(text_file, gender, output_filename):
         print(f"❌ {gender} ({voice}) 語音生成失敗。")
         return
 
-    total_dur = len(combined_voice) + 3000
+    # 2. 強制疊加背景音樂 (底音 -24 dBFS，尾段 4 秒自然淡出)
+    total_dur = len(combined_voice) + 4000
     final_bg = combined_bg[:total_dur]
     
-    music_filename = MUSIC_MAP.get(bg_music_type)
+    music_filename = MUSIC_MAP.get(bg_music_type, 'music_calm.mp3')
     if music_filename and os.path.exists(music_filename):
+        print(f"🔊 正在混入背景音樂: {music_filename}")
         bg_music = AudioSegment.from_file(music_filename)
         
-        # 音樂音量標準同化 (-24 dBFS)
         target_loudness = -24.0
         change_in_dBFS = target_loudness - bg_music.dBFS
         bg_music = bg_music.apply_gain(change_in_dBFS)
         
         music_looped = (bg_music * (int(total_dur / len(bg_music)) + 1))[:total_dur]
-        music_looped = music_looped.fade_out(2000)
+        music_looped = music_looped.fade_out(4000)
         final_bg = final_bg.overlay(music_looped)
+    else:
+        print(f"⚠️ 找不到音樂檔: {music_filename}，請檢查根目錄！")
 
     final_mix = final_bg.overlay(combined_voice, position=1000)
     final_mix.export(output_filename, format="mp3")
