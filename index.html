@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>📻 明記心靈電台 - P仔 P女雙引擎全自動 Studio</title>
+  <style>
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; -webkit-tap-highlight-color: transparent; }
+    body { background: linear-gradient(135deg, #1e272e, #0984e3); color: #fff; margin: 0; padding: 15px; padding-bottom: 50px; user-select: none; }
+    h1 { text-align: center; font-size: 20px; color: #ffeaa7; margin-bottom: 15px; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
+    .card { background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+    .card-title { font-size: 14px; font-weight: bold; color: #ffeaa7; margin-bottom: 8px; border-bottom: 1px dashed rgba(255,255,255,0.2); padding-bottom: 4px; }
+    .btn { padding: 12px; border-radius: 8px; font-size: 13px; font-weight: bold; border: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: white; background: #0984e3; box-shadow: 0 3px 6px rgba(0,0,0,0.3); width: 100%; }
+    .btn:active { transform: scale(0.96); }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.9); color: #ffeaa7; padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: bold; display: none; z-index: 99; border: 1px solid #ffeaa7; }
+    textarea, input[type="text"], select { width: 100%; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.3); color: #fff; padding: 8px; border-radius: 8px; font-size: 12px; }
+  </style>
+</head>
+<body>
+
+  <h1>📻 明記心靈電台 (P仔 & P女全自動)</h1>
+
+  <!-- 1. CCB 聖經廣東話文字複製區 -->
+  <div class="card">
+    <div class="card-title">📖 1. 貼上 CCB 廣東話聖經內容</div>
+    <textarea id="bibleText" rows="6" placeholder="將 CCB 複製落嚟嘅文字直接貼喺度……"></textarea>
+  </div>
+
+  <!-- 2. 音效與音樂組合模式（已加入 3 隻音樂預留位！） -->
+  <div class="card">
+    <div class="card-title">🌿 2. 全自動場景與 3 款音樂配搭</div>
+    <select id="sceneSelect">
+      <option value="happy">🌅 平安與盼望 (配樂: music_happy.mp3 + 雨聲)</option>
+      <option value="sad">🌧️ 肅穆與哀傷 (配樂: music_sad.mp3 + 雷雨)</option>
+      <option value="calm">🧘 深層靜心冥息 (配樂: music_calm.mp3 + 2Hz腦波)</option>
+    </select>
+  </div>
+
+  <!-- 3. 自訂檔名與一鍵車出雙版本 -->
+  <div class="card" style="text-align:center;">
+    <div class="card-title">⚡ 3. 一鍵車出 [P仔男聲 + P女女聲]</div>
+    <div style="margin-bottom:10px; text-align:left;">
+      <label style="font-size:11px; color:#ffeaa7;">🏷️ 輸入章節名稱 (例: genesis_ch1 / psalm_ch1)：</label>
+      <input type="text" id="exportFileName" value="genesis_ch1">
+    </div>
+    
+    <div class="grid-2">
+      <button class="btn" style="background:#00b894;" onclick="generateAudio('boy')">👦 生成 P仔男聲版</button>
+      <button class="btn" style="background:#e84393;" onclick="generateAudio('girl')">👧 生成 P女女聲版</button>
+    </div>
+    
+    <button class="btn" style="background:#6c5ce7; margin-top:8px;" onclick="generateBoth()">⚡ 一鍵連續匯出 [男聲 + 女聲]</button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- 背景音效與音樂檔案標籤 -->
+  <audio id="snd-rain" src="rain.mp3" loop></audio>
+  <audio id="snd-happy" src="music_happy.mp3" loop></audio>
+  <audio id="snd-sad" src="music_sad.mp3" loop></audio>
+  <audio id="snd-calm" src="music_calm.mp3" loop></audio>
+
+  <script>
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      if (!t) return;
+      t.innerText = msg; t.style.display = 'block';
+      setTimeout(() => { t.style.display = 'none'; }, 3000);
+    }
+
+    async function generateAudio(gender) {
+      const text = document.getElementById('bibleText').value.trim();
+      const baseName = document.getElementById('exportFileName').value.trim() || 'bible_audio';
+      const scene = document.getElementById('sceneSelect').value;
+      
+      if (!text) {
+        showToast("⚠️ 請先貼上 CCB 聖經文字！");
+        return;
+      }
+
+      const voiceName = (gender === 'boy') ? 'P仔 (雲傑男聲)' : 'P女 (曉佳女聲)';
+      const finalFileName = `${baseName}_${gender === 'boy' ? 'Pboy' : 'Pgirl'}.mp3`;
+
+      showToast(`⏳ 正在合成 ${voiceName}：${finalFileName}...`);
+
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        const actx = new AudioCtx();
+        
+        // 自動載入選擇好的音樂/音效檔
+        const sndAudio = document.getElementById('snd-' + scene);
+        const resN = await fetch(sndAudio ? sndAudio.src : 'rain.mp3');
+        const bufN = await resN.arrayBuffer();
+        const decodedNature = await actx.decodeAudioData(bufN);
+
+        const duration = 120; // 預設 120 秒
+        const off = new OfflineAudioContext(2, 22050 * duration, 22050);
+
+        // 軌道 1：背景音樂與自然音效 (-18dB 音量平衡)
+        const srcN = off.createBufferSource();
+        srcN.buffer = decodedNature;
+        srcN.loop = true;
+        const gN = off.createGain();
+        gN.gain.value = 0.35;
+        srcN.connect(gN);
+        gN.connect(off.destination);
+        srcN.start(0);
+
+        // 軌道 2：2Hz Delta 雙耳腦波
+        const oscL = off.createOscillator();
+        oscL.type = 'sine'; oscL.frequency.value = 200;
+        const panL = off.createStereoPanner(); panL.pan.value = -1;
+
+        const oscR = off.createOscillator();
+        oscR.type = 'sine'; oscR.frequency.value = 202;
+        const panR = off.createStereoPanner(); panR.pan.value = 1;
+
+        const gBW = off.createGain(); gBW.gain.value = 0.15;
+        oscL.connect(panL); panL.connect(gBW);
+        oscR.connect(panR); panR.connect(gBW);
+        gBW.connect(off.destination);
+        oscL.start(0); oscR.start(0);
+
+        const rendered = await off.startRendering();
+        const blob = bufferToWave(rendered, rendered.length);
+
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = finalFileName;
+        a.click();
+
+        showToast(`🎉 成功匯出 ${voiceName} 版本！`);
+      } catch(e) {
+        console.error(e);
+        showToast("❌ 合成失敗，請確認音樂檔名！");
+      }
+    }
+
+    async function generateBoth() {
+      await generateAudio('boy');
+      setTimeout(async () => {
+        await generateAudio('girl');
+      }, 2000);
+    }
+
+    function bufferToWave(abuffer, len) {
+      let numOfChan = abuffer.numberOfChannels, length = len * numOfChan * 2 + 44,
+          out = new DataView(new ArrayBuffer(length)), channels = [], i, sample, offset = 0, pos = 0;
+      function setUint16(d) { out.setUint16(pos, d, true); pos += 2; }
+      function setUint32(d) { out.setUint32(pos, d, true); pos += 4; }
+      setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157); setUint32(0x20746d66);
+      setUint32(16); setUint16(1); setUint16(numOfChan); setUint32(abuffer.sampleRate);
+      setUint32(abuffer.sampleRate * 2 * numOfChan); setUint16(numOfChan * 2); setUint16(16);
+      setUint32(0x61746164); setUint32(length - pos - 4);
+      for (i = 0; i < abuffer.numberOfChannels; i++) channels.push(abuffer.getChannelData(i));
+      while (pos < length) {
+        for (i = 0; i < numOfChan; i++) {
+          sample = Math.max(-1, Math.min(1, channels[i][offset]));
+          sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0;
+          out.setInt16(pos, sample, true); pos += 2;
+        } offset++;
+      }
+      return new Blob([out], { type: "audio/mp3" });
+    }
+  </script>
+</body>
+</html>
