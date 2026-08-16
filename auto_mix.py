@@ -8,11 +8,13 @@ from pydub import AudioSegment
 
 TAG_AUDIO_MAP = {
     '[雷雨]': 'thunder.mp3',
+    '[雷聲]': 'thunder.mp3',
     '[雨聲雷鳴]': 'thunder.mp3',
     '[風雨雷電]': 'thunder.mp3',
     '[下雨]': 'rain.mp3',
-    '[雨夜柴火]': 'rain.mp3',
+    '[雨聲]': 'rain.mp3',
     '[海洋]': 'wave.mp3',
+    '[海浪]': 'wave.mp3',
     '[海浪風鈴]': 'wave.mp3',
     '[柴火]': 'fire.mp3',
     '[溫暖]': 'fire.mp3',
@@ -20,7 +22,13 @@ TAG_AUDIO_MAP = {
     '[天地]': 'forest.mp3',
     '[森林鳥鳴]': 'forest.mp3',
     '[風鈴]': 'windbell.mp3',
-    '[海鳥]': 'windbell.mp3'
+    '[海鳥]': 'windbell.mp3',
+    '[溪流]': 'stream.mp3',
+    '[流水]': 'stream.mp3',
+    '[戰爭]': 'war.mp3',
+    '[交戰]': 'war.mp3',
+    '[洞穴]': 'cave.mp3',
+    '[水滴]': 'cave.mp3'
 }
 
 MUSIC_MAP = {
@@ -30,17 +38,15 @@ MUSIC_MAP = {
 }
 
 VOICE_MAP = {
-    'boy': 'zh-HK-WanLungNeural',   # P仔 雲傑男聲
-    'girl': 'zh-HK-HiuMaanNeural'   # P女 曉曼女聲 (極穩定)
+    'boy': 'zh-HK-WanLungNeural',   # P仔
+    'girl': 'zh-HK-HiuMaanNeural'   # P女
 }
-
 
 async def generate_tts(text, voice, output_mp3):
     clean_text = re.sub(r'\[.*?\]', '', text).strip()
     if not clean_text:
         return False
 
-    # 強力重試 8 次，解決女聲 API 連線問題
     for attempt in range(8):
         try:
             communicate = edge_tts.Communicate(clean_text, voice, rate='-20%')
@@ -53,9 +59,15 @@ async def generate_tts(text, voice, output_mp3):
             await asyncio.sleep(3)
     return False
 
-def mix_chapter(text_file, gender, bg_music_type, output_filename):
+def mix_chapter(text_file, gender, output_filename):
     with open(text_file, 'r', encoding='utf-8') as f:
         raw_content = f.read()
+
+    # 從 txt 第一行自動讀取背景音樂控制標籤
+    bg_music_type = 'calm'
+    bgm_match = re.search(r'\[BGM:\s*(happy|calm|sad)\]', raw_content, re.IGNORECASE)
+    if bgm_match:
+        bg_music_type = bgm_match.group(1).lower()
 
     voice = VOICE_MAP.get(gender, 'zh-HK-WanLungNeural')
     
@@ -67,6 +79,8 @@ def mix_chapter(text_file, gender, bg_music_type, output_filename):
     
     for part in parts:
         if not part.strip():
+            continue
+        if part.startswith('[BGM:'):
             continue
         if part in TAG_AUDIO_MAP or part.startswith('['):
             current_tag = part
@@ -91,19 +105,18 @@ def mix_chapter(text_file, gender, bg_music_type, output_filename):
         raw_voice = AudioSegment.from_file(temp_file)
         seg_dur = len(raw_voice) + 1500
         
-        # 零疊加單一音效，20% 微音量 (-22dB)
+        # 音效切換：淡入淡出順暢銜接，不重疊
         a_file = TAG_AUDIO_MAP.get(tag, 'fire.mp3')
         seg_bg = AudioSegment.silent(duration=seg_dur)
 
         if os.path.exists(a_file):
             snd = AudioSegment.from_file(a_file)
             snd_looped = (snd * (int(seg_dur / len(snd)) + 1))[:seg_dur] - 22
-            seg_bg = snd_looped
+            seg_bg = snd_looped.fade_in(500).fade_out(1000)
 
         combined_voice += raw_voice + AudioSegment.silent(duration=1500)
         combined_bg += seg_bg
 
-    # 清理臨時檔
     for t_file in created_temp_files:
         if os.path.exists(t_file):
             os.remove(t_file)
@@ -112,14 +125,19 @@ def mix_chapter(text_file, gender, bg_music_type, output_filename):
         print(f"❌ {gender} ({voice}) 語音生成失敗。")
         return
 
-    # 結尾自然淡出 (Fade Out 2 秒)
     total_dur = len(combined_voice) + 3000
     final_bg = combined_bg[:total_dur]
     
     music_filename = MUSIC_MAP.get(bg_music_type)
     if music_filename and os.path.exists(music_filename):
         bg_music = AudioSegment.from_file(music_filename)
-        music_looped = (bg_music * (int(total_dur / len(bg_music)) + 1))[:total_dur] - 24
+        
+        # 音樂音量標準同化 (-24 dBFS)
+        target_loudness = -24.0
+        change_in_dBFS = target_loudness - bg_music.dBFS
+        bg_music = bg_music.apply_gain(change_in_dBFS)
+        
+        music_looped = (bg_music * (int(total_dur / len(bg_music)) + 1))[:total_dur]
         music_looped = music_looped.fade_out(2000)
         final_bg = final_bg.overlay(music_looped)
 
@@ -128,10 +146,9 @@ def mix_chapter(text_file, gender, bg_music_type, output_filename):
 
 if __name__ == "__main__":
     if os.path.exists("input.txt"):
-        # 接收外部傳入參數 (boy 或 girl)
         target_gender = sys.argv[1] if len(sys.argv) > 1 else 'boy'
         output_file = f"genesis_ch1_P{target_gender}.mp3"
         
         print(f"⚡ 正在專注生成 P_{target_gender} 完整混音版...")
-        mix_chapter("input.txt", target_gender, "calm", output_file)
+        mix_chapter("input.txt", target_gender, output_file)
         print(f"🎉 P_{target_gender} 混音完美完成！")
