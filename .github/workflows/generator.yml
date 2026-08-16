@@ -1,8 +1,9 @@
-
 name: Generate Bible Audio
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ "main" ]
 
 jobs:
   build:
@@ -30,4 +31,3 @@ jobs:
         with:
           name: MP3_Outputs
           path: "*.mp3"
-          
