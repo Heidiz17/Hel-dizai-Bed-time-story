@@ -6,20 +6,20 @@ import edge_tts
 from pydub import AudioSegment
 
 TAG_AUDIO_MAP = {
-    '[雷雨]': ['thunder.mp3', 'rain.mp3'],
-    '[雨聲雷鳴]': ['thunder.mp3', 'rain.mp3'],
-    '[風雨雷電]': ['thunder.mp3', 'rain.mp3'],
-    '[下雨]': ['rain.mp3'],
-    '[雨夜柴火]': ['rain.mp3', 'fire.mp3'],
-    '[海洋]': ['wave.mp3'],
-    '[海浪風鈴]': ['wave.mp3', 'windbell.mp3'],
-    '[柴火]': ['fire.mp3'],
-    '[溫暖]': ['fire.mp3'],
-    '[森林]': ['forest.mp3'],
-    '[天地]': ['forest.mp3'],
-    '[森林鳥鳴]': ['forest.mp3', 'windbell.mp3'],
-    '[風鈴]': ['windbell.mp3'],
-    '[海鳥]': ['windbell.mp3']
+    '[雷雨]': 'thunder.mp3',
+    '[雨聲雷鳴]': 'thunder.mp3',
+    '[風雨雷電]': 'thunder.mp3',
+    '[下雨]': 'rain.mp3',
+    '[雨夜柴火]': 'rain.mp3',
+    '[海洋]': 'wave.mp3',
+    '[海浪風鈴]': 'wave.mp3',
+    '[柴火]': 'fire.mp3',
+    '[溫暖]': 'fire.mp3',
+    '[森林]': 'forest.mp3',
+    '[天地]': 'forest.mp3',
+    '[森林鳥鳴]': 'forest.mp3',
+    '[風鈴]': 'windbell.mp3',
+    '[海鳥]': 'windbell.mp3'
 }
 
 MUSIC_MAP = {
@@ -33,84 +33,107 @@ VOICE_MAP = {
     'girl': 'zh-HK-HiuiuNeural'    # P女 曉佳女聲
 }
 
+# 音訊精準降速函數 (放慢 20% = speed 0.8)
+def slow_down_audio(segment, speed=0.8):
+    sound_with_altered_frame_rate = segment._spawn(segment.raw_data, overrides={
+        "frame_rate": int(segment.frame_rate * speed)
+    })
+    return sound_with_altered_frame_rate.set_frame_rate(segment.frame_rate)
+
 async def generate_tts(text, voice, output_mp3):
     clean_text = re.sub(r'\[.*?\]', '', text).strip()
     if not clean_text:
-        clean_text = "廣東話聖經朗讀"
+        return False
 
-    # rate='-20%' 放慢語速 20%
     for attempt in range(5):
         try:
-            communicate = edge_tts.Communicate(clean_text, voice, rate='-20%')
+            communicate = edge_tts.Communicate(clean_text, voice)
             await communicate.save(output_mp3)
             if os.path.exists(output_mp3) and os.path.getsize(output_mp3) > 1000:
-                print(f"✅ {voice} 成功生成音檔，大小: {os.path.getsize(output_mp3)} bytes")
-                return
+                return True
         except Exception as e:
-            print(f"⚠️ TTS 合成 ({voice}) 第 {attempt+1} 次失敗，正在重試: {e}")
-            await asyncio.sleep(4)
+            await asyncio.sleep(2)
+    return False
 
 def mix_chapter(text_file, gender, bg_music_type, output_filename):
     with open(text_file, 'r', encoding='utf-8') as f:
-        content = f.read()
+        raw_content = f.read()
 
     voice = VOICE_MAP.get(gender, 'zh-HK-WanLungNeural')
-    voice_file = f"temp_voice_{gender}.mp3"
     
-    if os.path.exists(voice_file):
-        os.remove(voice_file)
+    pattern = r'(\[.*?\])'
+    parts = re.split(pattern, raw_content)
+    
+    sections = []
+    current_tag = None
+    
+    for part in parts:
+        if not part.strip():
+            continue
+        if part in TAG_AUDIO_MAP or part.startswith('['):
+            current_tag = part
+        else:
+            sections.append((current_tag, part.strip()))
 
-    asyncio.run(generate_tts(content, voice, voice_file))
+    if not sections:
+        sections = [(None, raw_content.strip())]
 
-    if not os.path.exists(voice_file) or os.path.getsize(voice_file) < 1000:
-        print(f"❌ {gender} ({voice}) 最終生成失敗，無法進行混音。")
-        return
+    combined_voice = AudioSegment.silent(duration=0)
+    combined_bg = AudioSegment.silent(duration=0)
 
-    voice_segment = AudioSegment.from_file(voice_file)
-    total_duration = len(voice_segment) + 3000
+    for idx, (tag, text) in enumerate(sections):
+        temp_file = f"temp_{gender}_{idx}.mp3"
+        success = asyncio.run(generate_tts(text, voice, temp_file))
+        
+        if not success or not os.path.exists(temp_file):
+            continue
 
-    base_bg = AudioSegment.silent(duration=total_duration)
+        raw_voice = AudioSegment.from_file(temp_file)
+        
+        # 關鍵精準降速：強行將人聲音訊精確放慢 20% (0.8x 速度)
+        slow_voice = slow_down_audio(raw_voice, speed=0.8)
+        
+        seg_dur = len(slow_voice) + 1500
+        
+        a_file = TAG_AUDIO_MAP.get(tag, 'fire.mp3')
+        seg_bg = AudioSegment.silent(duration=seg_dur)
 
-    selected_files = []
-    for tag, audio_files in TAG_AUDIO_MAP.items():
-        if tag in content:
-            selected_files = audio_files
-            break
-
-    if not selected_files and os.path.exists('fire.mp3'):
-        selected_files = ['fire.mp3']
-
-    # 大自然音效降至 20% (-22dB) + 淡出 2 秒
-    for a_file in selected_files:
         if os.path.exists(a_file):
             snd = AudioSegment.from_file(a_file)
-            snd_looped = (snd * (int(total_duration / len(snd)) + 1))[:total_duration] - 22
-            snd_looped = snd_looped.fade_out(2000)
-            base_bg = base_bg.overlay(snd_looped)
+            snd_looped = (snd * (int(seg_dur / len(snd)) + 1))[:seg_dur] - 22 # 20% 微音量 (-22dB)
+            seg_bg = snd_looped
 
-    # 背景音樂 (-24dB) + 淡出 2 秒
+        combined_voice += slow_voice + AudioSegment.silent(duration=1500)
+        combined_bg += seg_bg
+
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
+
+    if len(combined_voice) == 0:
+        print(f"❌ {gender} 語音生成失敗。")
+        return
+
+    total_dur = len(combined_voice) + 3000
+    final_bg = combined_bg[:total_dur]
+    
     music_filename = MUSIC_MAP.get(bg_music_type)
     if music_filename and os.path.exists(music_filename):
         bg_music = AudioSegment.from_file(music_filename)
-        music_looped = (bg_music * (int(total_duration / len(bg_music)) + 1))[:total_duration] - 24
+        music_looped = (bg_music * (int(total_dur / len(bg_music)) + 1))[:total_dur] - 24
         music_looped = music_looped.fade_out(2000)
-        base_bg = base_bg.overlay(music_looped)
+        final_bg = final_bg.overlay(music_looped)
 
-    final_mix = base_bg.overlay(voice_segment, position=1000)
+    final_mix = final_bg.overlay(combined_voice, position=1000)
     final_mix.export(output_filename, format="mp3")
-
-    if os.path.exists(voice_file):
-        os.remove(voice_file)
 
 if __name__ == "__main__":
     if os.path.exists("input.txt"):
-        print("⚡ 1/2 正在生成 P仔 男聲版...")
+        print("⚡ 正在生成 P仔 男聲版 (音訊強行精準減速20%)...")
         mix_chapter("input.txt", "boy", "happy", "genesis_ch1_Pboy.mp3")
         
-        print("⏳ 避開伺服器頻率限制，休息 5 秒...")
-        time.sleep(5)
+        time.sleep(4)
         
-        print("⚡ 2/2 正在生成 P女 女聲版...")
+        print("⚡ 正在生成 P女 女聲版 (音訊強行精準減速20%)...")
         mix_chapter("input.txt", "girl", "happy", "genesis_ch1_Pgirl.mp3")
         
-        print("🎉 雙版本生成完成！")
+        print("🎉 雙版本精準放慢20%混音完成！")
