@@ -33,21 +33,15 @@ VOICE_MAP = {
     'girl': 'zh-HK-HiuiuNeural'    # P女 曉佳女聲
 }
 
-# 音訊精準降速函數 (放慢 20% = speed 0.8)
-def slow_down_audio(segment, speed=0.8):
-    sound_with_altered_frame_rate = segment._spawn(segment.raw_data, overrides={
-        "frame_rate": int(segment.frame_rate * speed)
-    })
-    return sound_with_altered_frame_rate.set_frame_rate(segment.frame_rate)
-
 async def generate_tts(text, voice, output_mp3):
     clean_text = re.sub(r'\[.*?\]', '', text).strip()
     if not clean_text:
         return False
 
+    # rate='-20%' 原聲自然放慢 20%（不改變音調，拒絕老牛聲）
     for attempt in range(5):
         try:
-            communicate = edge_tts.Communicate(clean_text, voice)
+            communicate = edge_tts.Communicate(clean_text, voice, rate='-20%')
             await communicate.save(output_mp3)
             if os.path.exists(output_mp3) and os.path.getsize(output_mp3) > 1000:
                 return True
@@ -89,21 +83,18 @@ def mix_chapter(text_file, gender, bg_music_type, output_filename):
             continue
 
         raw_voice = AudioSegment.from_file(temp_file)
+        seg_dur = len(raw_voice) + 1500
         
-        # 關鍵精準降速：強行將人聲音訊精確放慢 20% (0.8x 速度)
-        slow_voice = slow_down_audio(raw_voice, speed=0.8)
-        
-        seg_dur = len(slow_voice) + 1500
-        
+        # 零疊加：同一時間僅單一音效，20% 微音量 (-22dB)
         a_file = TAG_AUDIO_MAP.get(tag, 'fire.mp3')
         seg_bg = AudioSegment.silent(duration=seg_dur)
 
         if os.path.exists(a_file):
             snd = AudioSegment.from_file(a_file)
-            snd_looped = (snd * (int(seg_dur / len(snd)) + 1))[:seg_dur] - 22 # 20% 微音量 (-22dB)
+            snd_looped = (snd * (int(seg_dur / len(snd)) + 1))[:seg_dur] - 22
             seg_bg = snd_looped
 
-        combined_voice += slow_voice + AudioSegment.silent(duration=1500)
+        combined_voice += raw_voice + AudioSegment.silent(duration=1500)
         combined_bg += seg_bg
 
         if os.path.exists(temp_file):
@@ -113,6 +104,7 @@ def mix_chapter(text_file, gender, bg_music_type, output_filename):
         print(f"❌ {gender} 語音生成失敗。")
         return
 
+    # 結尾自然淡出
     total_dur = len(combined_voice) + 3000
     final_bg = combined_bg[:total_dur]
     
@@ -128,12 +120,12 @@ def mix_chapter(text_file, gender, bg_music_type, output_filename):
 
 if __name__ == "__main__":
     if os.path.exists("input.txt"):
-        print("⚡ 正在生成 P仔 男聲版 (音訊強行精準減速20%)...")
+        print("⚡ 正在生成 P仔 男聲版 (高清自然原聲 + -20%語速)...")
         mix_chapter("input.txt", "boy", "happy", "genesis_ch1_Pboy.mp3")
         
         time.sleep(4)
         
-        print("⚡ 正在生成 P女 女聲版 (音訊強行精準減速20%)...")
+        print("⚡ 正在生成 P女 女聲版 (高清自然原聲 + -20%語速)...")
         mix_chapter("input.txt", "girl", "happy", "genesis_ch1_Pgirl.mp3")
         
-        print("🎉 雙版本精準放慢20%混音完成！")
+        print("🎉 雙版本高清純淨混音完成！")
