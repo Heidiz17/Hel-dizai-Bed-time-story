@@ -5,6 +5,7 @@ import sys
 import time
 import edge_tts
 from pydub import AudioSegment
+from PIL import Image, ImageDraw, ImageFont
 
 TAG_AUDIO_MAP = {
     '[雷雨]': 'thunder.mp3',
@@ -41,6 +42,50 @@ VOICE_MAP = {
     'boy': 'zh-HK-WanLungNeural',   # P仔
     'girl': 'zh-HK-HiuMaanNeural'   # P女
 }
+
+def create_title_cover(base_image_path, title_text, output_image_path):
+    """喺封面圖加上招牌同章節標題"""
+    try:
+        img = Image.open(base_image_path).convert("RGBA")
+        width, height = img.size
+        
+        # 建立半透明遮罩，確保文字清晰
+        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+        
+        # 喺中間加半透明黑底條帶
+        rect_top = int(height * 0.35)
+        rect_bottom = int(height * 0.65)
+        draw.rectangle([(0, rect_top), (width, rect_bottom)], fill=(0, 0, 0, 160))
+        
+        img = Image.alpha_composite(img, overlay).convert("RGB")
+        draw = ImageDraw.Draw(img)
+        
+        # 嘗試載入系統中文字型
+        font_path = "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"
+        if not os.path.exists(font_path):
+            font_path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+            
+        try:
+            brand_font = ImageFont.truetype(font_path, int(height * 0.05))
+            title_font = ImageFont.truetype(font_path, int(height * 0.09))
+        except Exception:
+            brand_font = ImageFont.load_default()
+            title_font = ImageFont.load_default()
+            
+        brand_text = "✨ 廣東話聖經劇場 ✨"
+        
+        # 繪製招牌文字
+        draw.text((width / 2, height * 0.42), brand_text, font=brand_font, fill=(255, 215, 0), anchor="mm")
+        # 繪製章節標題
+        draw.text((width / 2, height * 0.54), title_text, font=title_font, fill=(255, 255, 255), anchor="mm")
+        
+        img.save(output_image_path)
+        print(f"🎨 已成功生成帶標題封面: {output_image_path}")
+        return True
+    except Exception as e:
+        print(f"⚠️ 生成標題封面失敗: {e}")
+        return False
 
 async def generate_tts(text, voice, output_mp3):
     clean_text = re.sub(r'\[.*?\]', '', text).strip()
@@ -80,7 +125,7 @@ def mix_chapter(text_file, gender, output_filename):
     for part in parts:
         if not part.strip():
             continue
-        if re.match(r'\[BGM\s*:', part, re.IGNORECASE):
+        if re.match(r'\[BGM\s*:', part, re.IGNORECASE) or re.match(r'\[TITLE\s*:', part, re.IGNORECASE):
             continue
         if part in TAG_AUDIO_MAP or part.startswith('['):
             current_tag = part
@@ -146,20 +191,33 @@ def mix_chapter(text_file, gender, output_filename):
     final_mix.export(output_filename, format="mp3")
     print(f"🎉 臨時音訊混音完成: {output_filename}")
 
-def generate_mp4(audio_file, video_output):
+def generate_mp4(audio_file, video_output, text_file="input.txt"):
     try:
         from moviepy import AudioFileClip, ImageClip
         
-        image_file = 'cover.png' if os.path.exists('cover.png') else 'default_cover.png'
-        
-        if not os.path.exists(image_file):
-            print(f"⚠️ 找不到封面圖片 ({image_file})，跳過 MP4 合成。")
+        base_image = 'cover.png' if os.path.exists('cover.png') else 'default_cover.png'
+        if not os.path.exists(base_image):
+            print(f"⚠️ 找不到封面圖片 ({base_image})，跳過 MP4 合成。")
             return
 
-        print(f"🎬 正在合成 MP4 影片，使用封面: {image_file}...")
+        # 抓取標題
+        title_text = "創世記 第一章"
+        if os.path.exists(text_file):
+            with open(text_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+                title_match = re.search(r'\[TITLE\s*:\s*(.*?)\]', content, re.IGNORECASE)
+                if title_match:
+                    title_text = title_match.group(1).strip()
+
+        # 生成帶標題的新圖
+        final_cover = "final_cover_with_title.png"
+        create_title_cover(base_image, title_text, final_cover)
+        
+        used_image = final_cover if os.path.exists(final_cover) else base_image
+
+        print(f"🎬 正在合成 MP4 影片，使用標題封面: {used_image}...")
         audio_clip = AudioFileClip(audio_file)
-        # 修正 MoviePy 2.0 新語法
-        video_clip = ImageClip(image_file, duration=audio_clip.duration)
+        video_clip = ImageClip(used_image, duration=audio_clip.duration)
         video_clip.audio = audio_clip
         
         video_clip.write_videofile(video_output, fps=24, codec='libx264', audio_codec='aac')
@@ -178,8 +236,8 @@ if __name__ == "__main__":
     if os.path.exists("input.txt"):
         # 1. 處理 P仔 (boy)
         mix_chapter("input.txt", 'boy', "temp_Pboy.mp3")
-        generate_mp4("temp_Pboy.mp3", "genesis_ch1_Pboy.mp4")
+        generate_mp4("temp_Pboy.mp3", "genesis_ch1_Pboy.mp4", "input.txt")
 
         # 2. 處理 P女 (girl)
         mix_chapter("input.txt", 'girl', "temp_Pgirl.mp3")
-        generate_mp4("temp_Pgirl.mp3", "genesis_ch1_Pgirl.mp4")
+        generate_mp4("temp_Pgirl.mp3", "genesis_ch1_Pgirl.mp4", "input.txt")
