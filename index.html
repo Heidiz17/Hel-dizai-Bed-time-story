@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>📻 明記心靈電台 - P仔 P女雙引擎全自動 Studio</title>
+  <title>📻 明記心靈電台 - 三聲道標籤感知全自動 Studio</title>
   <style>
     * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; -webkit-tap-highlight-color: transparent; }
     body { background: linear-gradient(135deg, #1e272e, #0984e3); color: #fff; margin: 0; padding: 15px; padding-bottom: 50px; user-select: none; }
@@ -19,33 +19,30 @@
 </head>
 <body>
 
-  <h1>📻 明記心靈電台 (P仔 & P女全自動)</h1>
+  <h1>📻 明記心靈電台 (三聲道終極自動版)</h1>
 
-  <!-- 1. CCB 聖經廣東話文字複製區 -->
+  <!-- 1. 廣東話文字貼上區 -->
   <div class="card">
-    <div class="card-title">📖 1. 貼上 CCB 廣東話聖經內容</div>
-    <textarea id="bibleText" rows="6" placeholder="將 CCB 複製落嚟嘅文字直接貼喺度……"></textarea>
+    <div class="card-title">📖 1. 貼上 P仔準備嘅廣東話聖經內容</div>
+    <textarea id="bibleText" rows="6" placeholder="貼上帶有標籤嘅廣東話文字……"></textarea>
   </div>
 
-  <!-- 2. 音效與音樂組合模式 -->
+  <!-- 2. 背景音樂選單 (預留三隻音樂 + 大自然聲全自動組合) -->
   <div class="card">
-    <div class="card-title">🌿 2. 全自動場景與音效配搭</div>
-    <select id="sceneSelect">
-      <option value="rain">🌧️ 聽雨 + 2Hz 腦波 (深睡舒壓)</option>
-      <option value="wave">🌊 海浪 + 風鈴 (安靜默想)</option>
-      <option value="thunder">⛈️ 雷雨 (莊嚴審判)</option>
-      <option value="fire">🔥 柴火 + 森林 (溫暖靜心)</option>
-      <option value="happy">🌅 平安與盼望 (配樂: music_happy.mp3 + 雨聲)</option>
-      <option value="sad">🌧️ 肅穆與哀傷 (配樂: music_sad.mp3 + 雷雨)</option>
-      <option value="calm">🧘 深層靜心冥息 (配樂: music_calm.mp3 + 2Hz腦波)</option>
+    <div class="card-title">🌿 2. 背景音樂配搭 (自動與自然音效/腦波混合)</div>
+    <select id="bgMusicSelect">
+      <option value="music_happy">🌅 1. 平安與盼望 (music_happy.mp3 + 標籤音效 + 腦波)</option>
+      <option value="music_sad">🌧️ 2. 肅穆與哀傷 (music_sad.mp3 + 標籤音效 + 腦波)</option>
+      <option value="music_calm">🧘 3. 深層靜心冥息 (music_calm.mp3 + 標籤音效 + 腦波)</option>
+      <option value="none">🚫 不使用背景音樂 (純標籤音效 + 腦波)</option>
     </select>
   </div>
 
-  <!-- 3. 自訂檔名與一鍵車出雙版本 -->
+  <!-- 3. 車出雙版本 -->
   <div class="card" style="text-align:center;">
     <div class="card-title">⚡ 3. 一鍵車出 [P仔男聲 + P女女聲]</div>
     <div style="margin-bottom:10px; text-align:left;">
-      <label style="font-size:11px; color:#ffeaa7;">🏷️ 輸入章節名稱 (例: genesis_ch1 / psalm_ch1)：</label>
+      <label style="font-size:11px; color:#ffeaa7;">🏷️ 輸入章節名稱：</label>
       <input type="text" id="exportFileName" value="genesis_ch1">
     </div>
     
@@ -67,10 +64,10 @@
   <audio id="snd-forest" src="forest.mp3" loop></audio>
   <audio id="snd-windbell" src="windbell.mp3" loop></audio>
 
-  <!-- 🔗 3 隻背景音樂預留處 -->
-  <audio id="snd-happy" src="music_happy.mp3" loop></audio>
-  <audio id="snd-sad" src="music_sad.mp3" loop></audio>
-  <audio id="snd-calm" src="music_calm.mp3" loop></audio>
+  <!-- 🔗 3 隻背景音樂預留處 (一傳檔案即自動生效) -->
+  <audio id="snd-music_happy" src="music_happy.mp3" loop></audio>
+  <audio id="snd-music_sad" src="music_sad.mp3" loop></audio>
+  <audio id="snd-music_calm" src="music_calm.mp3" loop></audio>
 
   <script>
     function showToast(msg) {
@@ -80,50 +77,83 @@
       setTimeout(() => { t.style.display = 'none'; }, 3000);
     }
 
+    // 標籤映射表
+    const tagMap = {
+      '[下雨]': 'rain',
+      '[雷雨]': 'thunder',
+      '[海洋]': 'wave',
+      '[溫暖]': 'fire',
+      '[天地]': 'forest',
+      '[海鳥]': 'windbell'
+    };
+
     async function generateAudio(gender) {
       const text = document.getElementById('bibleText').value.trim();
       const baseName = document.getElementById('exportFileName').value.trim() || 'bible_audio';
-      const scene = document.getElementById('sceneSelect').value;
+      const selectedMusic = document.getElementById('bgMusicSelect').value;
       
       if (!text) {
-        showToast("⚠️ 請先貼上 CCB 聖經文字！");
+        showToast("⚠️ 請先貼上聖經廣東話文字！");
         return;
       }
 
       const voiceName = (gender === 'boy') ? 'P仔 (雲傑男聲)' : 'P女 (曉佳女聲)';
       const finalFileName = `${baseName}_${gender === 'boy' ? 'Pboy' : 'Pgirl'}.mp3`;
 
-      showToast(`⏳ 正在合成 ${voiceName}：${finalFileName}...`);
+      showToast(`⏳ 正在合成三聲道 ${voiceName}：${finalFileName}...`);
 
       try {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         const actx = new AudioCtx();
-        
-        const sndAudio = document.getElementById('snd-' + scene);
-        const resN = await fetch(sndAudio ? sndAudio.src : 'rain.mp3');
-        const bufN = await resN.arrayBuffer();
-        const decodedNature = await actx.decodeAudioData(bufN);
 
-        const duration = 120; // 預設 120 秒 Sample
+        // 偵測第一個出現的標籤音效
+        let tagSnd = 'rain';
+        for (let tag in tagMap) {
+          if (text.includes(tag)) {
+            tagSnd = tagMap[tag];
+            break;
+          }
+        }
+
+        const duration = 120; // 預設 120 秒
         const off = new OfflineAudioContext(2, 22050 * duration, 22050);
 
-        // 軌道 1：背景音效 / 音樂 (-18dB 音量自動平衡)
-        const srcN = off.createBufferSource();
-        srcN.buffer = decodedNature;
-        srcN.loop = true;
-        const gN = off.createGain();
-        gN.gain.value = 0.35;
-        srcN.connect(gN);
-        gN.connect(off.destination);
-        srcN.start(0);
+        // 軌道 1：大自然標籤音效 (音量 30%)
+        const audioElTag = document.getElementById('snd-' + tagSnd);
+        const resTag = await fetch(audioElTag ? audioElTag.src : 'rain.mp3');
+        const bufTag = await resTag.arrayBuffer();
+        const decodedTag = await actx.decodeAudioData(bufTag);
 
-        // 軌道 2：2Hz Delta 雙耳腦波
-        const oscL = off.createOscillator();
-        oscL.type = 'sine'; oscL.frequency.value = 200;
+        const srcTag = off.createBufferSource();
+        srcTag.buffer = decodedTag; srcTag.loop = true;
+        const gTag = off.createGain(); gTag.gain.value = 0.3;
+        srcTag.connect(gTag); gTag.connect(off.destination);
+        srcTag.start(0);
+
+        // 軌道 2：背景音樂 (music_happy / music_sad / music_calm) (音量 25%)
+        if (selectedMusic !== 'none') {
+          const audioElMusic = document.getElementById('snd-' + selectedMusic);
+          if (audioElMusic) {
+            try {
+              const resMusic = await fetch(audioElMusic.src);
+              const bufMusic = await resMusic.arrayBuffer();
+              const decodedMusic = await actx.decodeAudioData(bufMusic);
+
+              const srcMusic = off.createBufferSource();
+              srcMusic.buffer = decodedMusic; srcMusic.loop = true;
+              const gMusic = off.createGain(); gMusic.gain.value = 0.25;
+              srcMusic.connect(gMusic); gMusic.connect(off.destination);
+              srcMusic.start(0);
+            } catch(mErr) {
+              console.log("尚未載入背景音樂檔，跳過音樂軌道");
+            }
+          }
+        }
+
+        // 軌道 3：2Hz Delta 雙耳深睡腦波 (音量 15%)
+        const oscL = off.createOscillator(); oscL.type = 'sine'; oscL.frequency.value = 200;
         const panL = off.createStereoPanner(); panL.pan.value = -1;
-
-        const oscR = off.createOscillator();
-        oscR.type = 'sine'; oscR.frequency.value = 202;
+        const oscR = off.createOscillator(); oscR.type = 'sine'; oscR.frequency.value = 202;
         const panR = off.createStereoPanner(); panR.pan.value = 1;
 
         const gBW = off.createGain(); gBW.gain.value = 0.15;
@@ -140,10 +170,10 @@
         a.download = finalFileName;
         a.click();
 
-        showToast(`🎉 成功匯出 ${voiceName} 版本！`);
+        showToast(`🎉 成功匯出 ${voiceName} 三聲道版！`);
       } catch(e) {
         console.error(e);
-        showToast("❌ 合成失敗，請確認音效/音樂檔名！");
+        showToast("❌ 合成失敗，請檢查音效檔！");
       }
     }
 
