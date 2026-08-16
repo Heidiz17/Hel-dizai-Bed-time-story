@@ -158,8 +158,9 @@ def generate_mp4(audio_file, video_output):
 
         print(f"🎬 正在合成 MP4 影片，使用封面: {image_file}...")
         audio_clip = AudioFileClip(audio_file)
-        video_clip = ImageClip(image_file).set_duration(audio_clip.duration)
-        video_clip = video_clip.set_audio(audio_clip)
+        # 修正 MoviePy 2.0 新語法
+        video_clip = ImageClip(image_file, duration=audio_clip.duration)
+        video_clip.audio = audio_clip
         
         video_clip.write_videofile(video_output, fps=24, codec='libx264', audio_codec='aac')
         print(f"✅ 成功生成終極 MP4 影片: {video_output}")
