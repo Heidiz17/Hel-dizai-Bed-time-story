@@ -148,7 +148,7 @@ def mix_chapter(text_file, gender, output_filename):
 
 def generate_mp4(audio_file, video_output):
     try:
-        from moviepy.editor import AudioFileClip, ImageClip
+        from moviepy import AudioFileClip, ImageClip
         
         image_file = 'cover.png' if os.path.exists('cover.png') else 'default_cover.png'
         
