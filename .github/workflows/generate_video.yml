@@ -1,0 +1,34 @@
+name: Generate Bible Videos
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5.3.0
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          pip install edge-tts pydub moviepy
+
+      - name: Run Auto Mix
+        run: python auto_mix.py
+
+      - name: Upload Video Artifacts
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: Bible_Videos_MP4
+          path: "*.mp4"
+          
