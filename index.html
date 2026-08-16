@@ -27,10 +27,14 @@
     <textarea id="bibleText" rows="6" placeholder="將 CCB 複製落嚟嘅文字直接貼喺度……"></textarea>
   </div>
 
-  <!-- 2. 音效與音樂組合模式（已加入 3 隻音樂預留位！） -->
+  <!-- 2. 音效與音樂組合模式 -->
   <div class="card">
-    <div class="card-title">🌿 2. 全自動場景與 3 款音樂配搭</div>
+    <div class="card-title">🌿 2. 全自動場景與音效配搭</div>
     <select id="sceneSelect">
+      <option value="rain">🌧️ 聽雨 + 2Hz 腦波 (深睡舒壓)</option>
+      <option value="wave">🌊 海浪 + 風鈴 (安靜默想)</option>
+      <option value="thunder">⛈️ 雷雨 (莊嚴審判)</option>
+      <option value="fire">🔥 柴火 + 森林 (溫暖靜心)</option>
       <option value="happy">🌅 平安與盼望 (配樂: music_happy.mp3 + 雨聲)</option>
       <option value="sad">🌧️ 肅穆與哀傷 (配樂: music_sad.mp3 + 雷雨)</option>
       <option value="calm">🧘 深層靜心冥息 (配樂: music_calm.mp3 + 2Hz腦波)</option>
@@ -55,8 +59,15 @@
 
   <div class="toast" id="toast"></div>
 
-  <!-- 背景音效與音樂檔案標籤 -->
+  <!-- 🔗 6 隻大自然音效接駁處 -->
   <audio id="snd-rain" src="rain.mp3" loop></audio>
+  <audio id="snd-wave" src="wave.mp3" loop></audio>
+  <audio id="snd-thunder" src="thunder.mp3" loop></audio>
+  <audio id="snd-fire" src="fire.mp3" loop></audio>
+  <audio id="snd-forest" src="forest.mp3" loop></audio>
+  <audio id="snd-windbell" src="windbell.mp3" loop></audio>
+
+  <!-- 🔗 3 隻背景音樂預留處 -->
   <audio id="snd-happy" src="music_happy.mp3" loop></audio>
   <audio id="snd-sad" src="music_sad.mp3" loop></audio>
   <audio id="snd-calm" src="music_calm.mp3" loop></audio>
@@ -88,16 +99,15 @@
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         const actx = new AudioCtx();
         
-        // 自動載入選擇好的音樂/音效檔
         const sndAudio = document.getElementById('snd-' + scene);
         const resN = await fetch(sndAudio ? sndAudio.src : 'rain.mp3');
         const bufN = await resN.arrayBuffer();
         const decodedNature = await actx.decodeAudioData(bufN);
 
-        const duration = 120; // 預設 120 秒
+        const duration = 120; // 預設 120 秒 Sample
         const off = new OfflineAudioContext(2, 22050 * duration, 22050);
 
-        // 軌道 1：背景音樂與自然音效 (-18dB 音量平衡)
+        // 軌道 1：背景音效 / 音樂 (-18dB 音量自動平衡)
         const srcN = off.createBufferSource();
         srcN.buffer = decodedNature;
         srcN.loop = true;
@@ -133,7 +143,7 @@
         showToast(`🎉 成功匯出 ${voiceName} 版本！`);
       } catch(e) {
         console.error(e);
-        showToast("❌ 合成失敗，請確認音樂檔名！");
+        showToast("❌ 合成失敗，請確認音效/音樂檔名！");
       }
     }
 
