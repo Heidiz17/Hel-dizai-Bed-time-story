@@ -30,7 +30,7 @@ MUSIC_MAP = {
 
 VOICE_MAP = {
     'boy': 'zh-HK-WanLungNeural',   # P仔 雲傑男聲
-    'girl': 'zh-HK-HiuiuNeural'    # P女 曉佳女聲
+    'girl': 'zh-HK-SiuMingNeural'   # P女 小明女聲 (全新升級)
 }
 
 async def generate_tts(text, voice, output_mp3):
@@ -38,7 +38,7 @@ async def generate_tts(text, voice, output_mp3):
     if not clean_text:
         return False
 
-    # rate='-20%' 原聲自然放慢 20%（不改變音調，拒絕老牛聲）
+    # rate='-20%' 自然放慢語速，保持高清音色
     for attempt in range(5):
         try:
             communicate = edge_tts.Communicate(clean_text, voice, rate='-20%')
@@ -74,9 +74,11 @@ def mix_chapter(text_file, gender, bg_music_type, output_filename):
 
     combined_voice = AudioSegment.silent(duration=0)
     combined_bg = AudioSegment.silent(duration=0)
+    created_temp_files = []
 
     for idx, (tag, text) in enumerate(sections):
         temp_file = f"temp_{gender}_{idx}.mp3"
+        created_temp_files.append(temp_file)
         success = asyncio.run(generate_tts(text, voice, temp_file))
         
         if not success or not os.path.exists(temp_file):
@@ -85,7 +87,7 @@ def mix_chapter(text_file, gender, bg_music_type, output_filename):
         raw_voice = AudioSegment.from_file(temp_file)
         seg_dur = len(raw_voice) + 1500
         
-        # 零疊加：同一時間僅單一音效，20% 微音量 (-22dB)
+        # 零疊加單一音效，20% 微音量 (-22dB)
         a_file = TAG_AUDIO_MAP.get(tag, 'fire.mp3')
         seg_bg = AudioSegment.silent(duration=seg_dur)
 
@@ -97,11 +99,13 @@ def mix_chapter(text_file, gender, bg_music_type, output_filename):
         combined_voice += raw_voice + AudioSegment.silent(duration=1500)
         combined_bg += seg_bg
 
-        if os.path.exists(temp_file):
-            os.remove(temp_file)
+    # 生成完畢後即時清空所有臨時聲音檔，不留垃圾
+    for t_file in created_temp_files:
+        if os.path.exists(t_file):
+            os.remove(t_file)
 
     if len(combined_voice) == 0:
-        print(f"❌ {gender} 語音生成失敗。")
+        print(f"❌ {gender} ({voice}) 語音生成失敗。")
         return
 
     # 結尾自然淡出
@@ -120,12 +124,13 @@ def mix_chapter(text_file, gender, bg_music_type, output_filename):
 
 if __name__ == "__main__":
     if os.path.exists("input.txt"):
-        print("⚡ 正在生成 P仔 男聲版 (高清自然原聲 + -20%語速)...")
+        print("⚡ 1/2 正在生成 P仔 男聲版 (雲傑 - 高清原聲 -20%語速)...")
         mix_chapter("input.txt", "boy", "happy", "genesis_ch1_Pboy.mp3")
         
-        time.sleep(4)
+        print("⏳ 避開請求頻率限制，休息 5 秒...")
+        time.sleep(5)
         
-        print("⚡ 正在生成 P女 女聲版 (高清自然原聲 + -20%語速)...")
+        print("⚡ 2/2 正在生成 P女 女聲版 (小明 - 高清原聲 -20%語速)...")
         mix_chapter("input.txt", "girl", "happy", "genesis_ch1_Pgirl.mp3")
         
         print("🎉 雙版本高清純淨混音完成！")
