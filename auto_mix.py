@@ -63,14 +63,12 @@ def mix_chapter(text_file, gender, output_filename):
     with open(text_file, 'r', encoding='utf-8') as f:
         raw_content = f.read()
 
-    # 1. 偵測 BGM
     bg_music_type = 'calm'
     bgm_match = re.search(r'\[BGM\s*:\s*(happy|calm|sad)\]', raw_content, re.IGNORECASE)
     if bgm_match:
         bg_music_type = bgm_match.group(1).lower()
 
     print(f"🎵 偵測到背景音樂類型: {bg_music_type}")
-
     voice = VOICE_MAP.get(gender, 'zh-HK-WanLungNeural')
     
     pattern = r'(\[.*?\])'
@@ -107,7 +105,6 @@ def mix_chapter(text_file, gender, output_filename):
         raw_voice = AudioSegment.from_file(temp_file)
         seg_dur = len(raw_voice) + 1500
         
-        # 特效音獨立處理
         a_file = TAG_AUDIO_MAP.get(tag, None)
         seg_sfx = AudioSegment.silent(duration=seg_dur)
 
@@ -129,7 +126,6 @@ def mix_chapter(text_file, gender, output_filename):
 
     total_dur = len(combined_voice) + 4000
     
-    # 2. 建立獨立背景音樂軌（全程鋪底）
     music_track = AudioSegment.silent(duration=total_dur)
     music_filename = MUSIC_MAP.get(bg_music_type, 'music_calm.mp3')
     
@@ -146,15 +142,44 @@ def mix_chapter(text_file, gender, output_filename):
     else:
         print(f"⚠️ 找不到音樂檔: {music_filename}")
 
-    # 3. 三層獨立混音：音樂底軌 + 特效音軌 + 語音軌
     final_mix = music_track.overlay(combined_sfx[:total_dur]).overlay(combined_voice, position=1000)
     final_mix.export(output_filename, format="mp3")
+    print(f"🎉 臨時音訊混音完成: {output_filename}")
+
+def generate_mp4(audio_file, video_output):
+    try:
+        from moviepy.editor import AudioFileClip, ImageClip
+        
+        image_file = 'cover.png' if os.path.exists('cover.png') else 'default_cover.png'
+        
+        if not os.path.exists(image_file):
+            print(f"⚠️ 找不到封面圖片 ({image_file})，跳過 MP4 合成。")
+            return
+
+        print(f"🎬 正在合成 MP4 影片，使用封面: {image_file}...")
+        audio_clip = AudioFileClip(audio_file)
+        video_clip = ImageClip(image_file).set_duration(audio_clip.duration)
+        video_clip = video_clip.set_audio(audio_clip)
+        
+        video_clip.write_videofile(video_output, fps=24, codec='libx264', audio_codec='aac')
+        print(f"✅ 成功生成終極 MP4 影片: {video_output}")
+
+        # 關鍵步：合成 MP4 後，立刻自動刪除中間產生的 MP3 檔！
+        audio_clip.close()
+        video_clip.close()
+        if os.path.exists(audio_file):
+            os.remove(audio_file)
+            print(f"🧹 已自動清理臨時音檔: {audio_file}")
+
+    except Exception as e:
+        print(f"⚠️ MP4 合成失敗: {e}")
 
 if __name__ == "__main__":
     if os.path.exists("input.txt"):
-        target_gender = sys.argv[1] if len(sys.argv) > 1 else 'boy'
-        output_file = f"genesis_ch1_P{target_gender}.mp3"
-        
-        print(f"⚡ 正在專注生成 P_{target_gender} 完整混音版...")
-        mix_chapter("input.txt", target_gender, output_file)
-        print(f"🎉 P_{target_gender} 混音完美完成！")
+        # 1. 處理 P仔 (boy) -> 輸出 MP4 -> 自動刪除 MP3
+        mix_chapter("input.txt", 'boy', "temp_Pboy.mp3")
+        generate_mp4("temp_Pboy.mp3", "genesis_ch1_Pboy.mp4")
+
+        # 2. 處理 P女 (girl) -> 輸出 MP4 -> 自動刪除 MP3
+        mix_chapter("input.txt", 'girl', "temp_Pgirl.mp3")
+        generate_mp4("temp_Pgirl.mp3", "genesis_ch1_Pgirl.mp4")
