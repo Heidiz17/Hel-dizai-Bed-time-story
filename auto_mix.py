@@ -31,8 +31,9 @@ MUSIC_MAP = {
 
 VOICE_MAP = {
     'boy': 'zh-HK-WanLungNeural',   # P仔 雲傑男聲
-    'girl': 'zh-HK-SiuMingNeural'   # P女 小明女聲
+    'girl': 'zh-HK-HiuMaanNeural'   # P女 曉曼女聲 (極穩定)
 }
+
 
 async def generate_tts(text, voice, output_mp3):
     clean_text = re.sub(r'\[.*?\]', '', text).strip()
