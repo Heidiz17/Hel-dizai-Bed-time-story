@@ -1,190 +1,85 @@
-<!DOCTYPE html>
-<html lang="zh-HK">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>📻 明記心靈電台 - P仔 P女雙引擎全自動 Studio</title>
-  <style>
-    * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; -webkit-tap-highlight-color: transparent; }
-    body { background: linear-gradient(135deg, #1e272e, #0984e3); color: #fff; margin: 0; padding: 15px; padding-bottom: 50px; user-select: none; }
-    h1 { text-align: center; font-size: 20px; color: #ffeaa7; margin-bottom: 15px; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
-    .card { background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
-    .card-title { font-size: 14px; font-weight: bold; color: #ffeaa7; margin-bottom: 8px; border-bottom: 1px dashed rgba(255,255,255,0.2); padding-bottom: 4px; }
-    .btn { padding: 12px; border-radius: 8px; font-size: 13px; font-weight: bold; border: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: white; background: #0984e3; box-shadow: 0 3px 6px rgba(0,0,0,0.3); width: 100%; }
-    .btn:active { transform: scale(0.96); }
-    .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-    .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.9); color: #ffeaa7; padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: bold; display: none; z-index: 99; border: 1px solid #ffeaa7; }
-    textarea, input[type="text"], select { width: 100%; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.3); color: #fff; padding: 8px; border-radius: 8px; font-size: 12px; }
-  </style>
-</head>
-<body>
+import os
+import re
+import asyncio
+import edge_tts
+from pydub import AudioSegment
 
-  <h1>📻 明記心靈電台 (P仔 & P女全自動)</h1>
+# 1. 6大標籤與大自然音效檔案對應表 (支援單重與雙重音效)
+TAG_AUDIO_MAP = {
+    '[下雨]': ['rain.mp3'],
+    '[雷雨]': ['rain.mp3', 'thunder.mp3'],
+    '[海洋]': ['wave.mp3', 'windbell.mp3'],
+    '[溫暖]': ['fire.mp3', 'rain.mp3'],
+    '[天地]': ['forest.mp3', 'rain.mp3'],
+    '[海鳥]': ['wave.mp3', 'forest.mp3']
+}
 
-  <div class="card">
-    <div class="card-title">📖 1. 貼上 CCB 廣東話聖經內容</div>
-    <textarea id="bibleText" rows="6" placeholder="貼上帶有標籤嘅廣東話文字……"></textarea>
-  </div>
+# 2. 3 隻背景音樂預留檔名 (happy / sad / calm)
+MUSIC_MAP = {
+    'happy': 'music_happy.mp3', # 代表 Happy / 平安讚美
+    'sad': 'music_sad.mp3',     # 代表 肅穆 / 哀傷
+    'calm': 'music_calm.mp3'    # 代表 Carmen 靜心 / 冥想
+}
 
-  <div class="card">
-    <div class="card-title">🌿 2. 背景音樂配搭</div>
-    <select id="bgMusicSelect">
-      <option value="music_happy">🌅 1. 平安與盼望 (music_happy.mp3)</option>
-      <option value="music_sad">🌧️ 2. 肅穆與哀傷 (music_sad.mp3)</option>
-      <option value="music_calm">🧘 3. 深層靜心冥息 (music_calm.mp3)</option>
-      <option value="none">🚫 不使用背景音樂</option>
-    </select>
-  </div>
+# 3. 語音引擎 (P仔男聲 & P女女聲)
+VOICE_MAP = {
+    'boy': 'zh-HK-WanLungNeural',   # P仔 雲傑男聲
+    'girl': 'zh-HK-HiuiuNeural'    # P女 曉佳女聲
+}
 
-  <div class="card" style="text-align:center;">
-    <div class="card-title">⚡ 3. 一鍵車出 [P仔男聲 + P女女聲]</div>
-    <div style="margin-bottom:10px; text-align:left;">
-      <label style="font-size:11px; color:#ffeaa7;">🏷️ 輸入章節名稱：</label>
-      <input type="text" id="exportFileName" value="genesis_ch1">
-    </div>
-    
-    <div class="grid-2">
-      <button class="btn" style="background:#00b894;" onclick="generateAudio('boy')">👦 生成 P仔男聲版</button>
-      <button class="btn" style="background:#e84393;" onclick="generateAudio('girl')">👧 生成 P女女聲版</button>
-    </div>
-    
-    <button class="btn" style="background:#6c5ce7; margin-top:8px;" onclick="generateBoth()">⚡ 一鍵連續匯出 [男聲 + 女聲]</button>
-  </div>
+async def generate_tts(text, voice, output_mp3):
+    # 清理文字中的標籤，只保留純廣東話文字給 Edge-TTS 朗讀
+    clean_text = re.sub(r'\[.*?\]', '', text)
+    communicate = edge_tts.Communicate(clean_text, voice)
+    await communicate.save(output_mp3)
 
-  <div class="toast" id="toast"></div>
+def mix_chapter(text_file, gender, bg_music_type, output_filename):
+    with open(text_file, 'r', encoding='utf-8') as f:
+        content = f.read()
 
-  <audio id="snd-rain" src="rain.mp3" loop></audio>
-  <audio id="snd-wave" src="wave.mp3" loop></audio>
-  <audio id="snd-thunder" src="thunder.mp3" loop></audio>
-  <audio id="snd-fire" src="fire.mp3" loop></audio>
-  <audio id="snd-forest" src="forest.mp3" loop></audio>
-  <audio id="snd-windbell" src="windbell.mp3" loop></audio>
-  <audio id="snd-music_happy" src="music_happy.mp3" loop></audio>
-  <audio id="snd-music_sad" src="music_sad.mp3" loop></audio>
-  <audio id="snd-music_calm" src="music_calm.mp3" loop></audio>
+    # 1. 生成廣東話人聲 (P仔/P女)
+    voice = VOICE_MAP.get(gender, 'zh-HK-WanLungNeural')
+    voice_file = f"temp_{gender}.mp3"
+    asyncio.run(generate_tts(content, voice, voice_file))
 
-  <script>
-    function showToast(msg) {
-      var t = document.getElementById('toast');
-      if (!t) return;
-      t.innerText = msg; t.style.display = 'block';
-      setTimeout(function() { t.style.display = 'none'; }, 3000);
-    }
+    voice_segment = AudioSegment.from_file(voice_file)
+    total_duration = len(voice_segment) + 4000 # 結尾留白 4 秒
 
-    var tagMap = {
-      '[下雨]': 'rain',
-      '[雷雨]': 'thunder',
-      '[海洋]': 'wave',
-      '[溫暖]': 'fire',
-      '[天地]': 'forest',
-      '[海鳥]': 'windbell'
-    };
+    # 2. 建立靜音底軌 (長度跟隨廣東話人聲)
+    base_bg = AudioSegment.silent(duration=total_duration)
 
-    async function generateAudio(gender) {
-      var textInput = document.getElementById('bibleText');
-      var nameInput = document.getElementById('exportFileName');
-      var musicSelect = document.getElementById('bgMusicSelect');
-      
-      var text = textInput ? textInput.value.trim() : '';
-      var baseName = nameInput ? nameInput.value.trim() : 'genesis_ch1';
-      var selectedMusic = musicSelect ? musicSelect.value : 'none';
-      
-      if (!text) {
-        showToast("⚠️ 請先貼上聖經廣東話文字！");
-        return;
-      }
+    # 3. 根據標籤自動疊加上大自然音效
+    for tag, audio_files in TAG_AUDIO_MAP.items():
+        if tag in content:
+            for a_file in audio_files:
+                if os.path.exists(a_file):
+                    snd = AudioSegment.from_file(a_file)
+                    # 循環播放音效至覆蓋整集長度
+                    snd_looped = (snd * (int(total_duration / len(snd)) + 1))[:total_duration] - 12
+                    base_bg = base_bg.overlay(snd_looped)
+            break
 
-      var voiceName = (gender === 'boy') ? 'P仔 (雲傑男聲)' : 'P女 (曉佳女聲)';
-      var finalFileName = baseName + '_' + (gender === 'boy' ? 'Pboy' : 'Pgirl') + '.mp3';
+    # 4. 疊加背景音樂 (happy / sad / calm，若有檔案自動融合)
+    music_filename = MUSIC_MAP.get(bg_music_type)
+    if music_filename and os.path.exists(music_filename):
+        bg_music = AudioSegment.from_file(music_filename)
+        music_looped = (bg_music * (int(total_duration / len(bg_music)) + 1))[:total_duration] - 15
+        base_bg = base_bg.overlay(music_looped)
 
-      showToast("⏳ 正在合成 " + voiceName + "：" + finalFileName + "...");
+    # 5. 將人聲與純淨背景音效 (自然聲+背景樂) 完美混音
+    final_mix = base_bg.overlay(voice_segment, position=1000)
+    final_mix.export(output_filename, format="mp3")
 
-      try {
-        var AudioCtx = window.AudioContext || window.webkitAudioContext;
-        var actx = new AudioCtx();
+    # 清理臨時檔
+    if os.path.exists(voice_file):
+        os.remove(voice_file)
 
-        var tagSnd = 'rain';
-        for (var tag in tagMap) {
-          if (text.indexOf(tag) !== -1) {
-            tagSnd = tagMap[tag];
-            break;
-          }
-        }
-
-        var duration = 120;
-        var off = new OfflineAudioContext(2, 22050 * duration, 22050);
-
-        var audioElTag = document.getElementById('snd-' + tagSnd);
-        var resTag = await fetch(audioElTag ? audioElTag.src : 'rain.mp3');
-        var bufTag = await resTag.arrayBuffer();
-        var decodedTag = await actx.decodeAudioData(bufTag);
-
-        var srcTag = off.createBufferSource();
-        srcTag.buffer = decodedTag; srcTag.loop = true;
-        var gTag = off.createGain(); gTag.gain.value = 0.3;
-        srcTag.connect(gTag); gTag.connect(off.destination);
-        srcTag.start(0);
-
-        if (selectedMusic !== 'none') {
-          var audioElMusic = document.getElementById('snd-' + selectedMusic);
-          if (audioElMusic) {
-            try {
-              var resMusic = await fetch(audioElMusic.src);
-              var bufMusic = await resMusic.arrayBuffer();
-              var decodedMusic = await actx.decodeAudioData(bufMusic);
-
-              var srcMusic = off.createBufferSource();
-              srcMusic.buffer = decodedMusic; srcMusic.loop = true;
-              var gMusic = off.createGain(); gMusic.gain.value = 0.25;
-              srcMusic.connect(gMusic); gMusic.connect(off.destination);
-              srcMusic.start(0);
-            } catch(mErr) {
-              console.log("尚未載入背景音樂檔");
-            }
-          }
-        }
-
-        var rendered = await off.startRendering();
-        var blob = bufferToWave(rendered, rendered.length);
-
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = finalFileName;
-        a.click();
-
-        showToast("🎉 成功匯出 " + voiceName + " 版！");
-      } catch(e) {
-        console.error(e);
-        showToast("❌ 合成失敗，請檢查音效檔！");
-      }
-    }
-
-    async function generateBoth() {
-      await generateAudio('boy');
-      setTimeout(async function() {
-        await generateAudio('girl');
-      }, 2000);
-    }
-
-    function bufferToWave(abuffer, len) {
-      var numOfChan = abuffer.numberOfChannels, length = len * numOfChan * 2 + 44,
-          out = new DataView(new ArrayBuffer(length)), channels = [], i = 0, sample = 0, offset = 0, pos = 0;
-      function setUint16(d) { out.setUint16(pos, d, true); pos += 2; }
-      function setUint32(d) { out.setUint32(pos, d, true); pos += 4; }
-      setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157); setUint32(0x20746d66);
-      setUint32(16); setUint16(1); setUint16(numOfChan); setUint32(abuffer.sampleRate);
-      setUint32(abuffer.sampleRate * 2 * numOfChan); setUint16(numOfChan * 2); setUint16(16);
-      setUint32(0x61746164); setUint32(length - pos - 4);
-      for (i = 0; i < abuffer.numberOfChannels; i++) channels.push(abuffer.getChannelData(i));
-      while (pos < length) {
-        for (i = 0; i < numOfChan; i++) {
-          sample = Math.max(-1, Math.min(1, channels[i][offset]));
-          sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0;
-          out.setInt16(pos, sample, true); pos += 2;
-        } offset++;
-      }
-      return new Blob([out], { type: "audio/mp3" });
-    }
-  </script>
-</body>
-</html>
+if __name__ == "__main__":
+    if os.path.exists("input.txt"):
+        print("⚡ 正在生成 P仔 男聲版...")
+        mix_chapter("input.txt", "boy", "happy", "genesis_ch1_Pboy.mp3")
+        
+        print("⚡ 正在生成 P女 女聲版...")
+        mix_chapter("input.txt", "girl", "happy", "genesis_ch1_Pgirl.mp3")
+        
+        print("🎉 雙版本純淨混音完美完成！")
