@@ -30,7 +30,7 @@ MUSIC_MAP = {
 
 VOICE_MAP = {
     'boy': 'zh-HK-WanLungNeural',   # P仔 雲傑男聲
-    'girl': 'zh-HK-SiuMingNeural'   # P女 小明女聲 (全新升級)
+    'girl': 'zh-HK-SiuMingNeural'   # P女 小明女聲
 }
 
 async def generate_tts(text, voice, output_mp3):
@@ -38,15 +38,17 @@ async def generate_tts(text, voice, output_mp3):
     if not clean_text:
         return False
 
-    # rate='-20%' 自然放慢語速，保持高清音色
-    for attempt in range(5):
+    # 加強版重試 8 次，解決女聲引擎偶發性連線失敗問題
+    for attempt in range(8):
         try:
             communicate = edge_tts.Communicate(clean_text, voice, rate='-20%')
             await communicate.save(output_mp3)
             if os.path.exists(output_mp3) and os.path.getsize(output_mp3) > 1000:
+                print(f"✅ [{voice}] 語音合成成功！")
                 return True
         except Exception as e:
-            await asyncio.sleep(2)
+            print(f"⚠️ [{voice}] 重試第 {attempt+1} 次...")
+            await asyncio.sleep(3)
     return False
 
 def mix_chapter(text_file, gender, bg_music_type, output_filename):
@@ -99,7 +101,6 @@ def mix_chapter(text_file, gender, bg_music_type, output_filename):
         combined_voice += raw_voice + AudioSegment.silent(duration=1500)
         combined_bg += seg_bg
 
-    # 生成完畢後即時清空所有臨時聲音檔，不留垃圾
     for t_file in created_temp_files:
         if os.path.exists(t_file):
             os.remove(t_file)
@@ -125,12 +126,12 @@ def mix_chapter(text_file, gender, bg_music_type, output_filename):
 if __name__ == "__main__":
     if os.path.exists("input.txt"):
         print("⚡ 1/2 正在生成 P仔 男聲版 (雲傑 - 高清原聲 -20%語速)...")
-        mix_chapter("input.txt", "boy", "happy", "genesis_ch1_Pboy.mp3")
+        mix_chapter("input.txt", "boy", "calm", "genesis_ch1_Pboy.mp3")
         
-        print("⏳ 避開請求頻率限制，休息 5 秒...")
-        time.sleep(5)
+        print("⏳ 避開伺服器頻率限制，休息 6 秒...")
+        time.sleep(6)
         
         print("⚡ 2/2 正在生成 P女 女聲版 (小明 - 高清原聲 -20%語速)...")
-        mix_chapter("input.txt", "girl", "happy", "genesis_ch1_Pgirl.mp3")
+        mix_chapter("input.txt", "girl", "calm", "genesis_ch1_Pgirl.mp3")
         
         print("🎉 雙版本高清純淨混音完成！")
