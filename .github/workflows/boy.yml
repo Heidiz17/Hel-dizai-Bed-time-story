@@ -19,7 +19,8 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
           pip install edge-tts pydub
 
       - name: Run Auto Mix Boy
