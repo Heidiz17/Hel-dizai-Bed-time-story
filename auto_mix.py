@@ -3,6 +3,7 @@ import re
 import asyncio
 import sys
 import time
+import urllib.request
 import edge_tts
 from pydub import AudioSegment
 from PIL import Image, ImageDraw, ImageFont
@@ -43,45 +44,63 @@ VOICE_MAP = {
     'girl': 'zh-HK-HiuMaanNeural'   # P女
 }
 
+def download_chinese_font():
+    """自動下載標準高清中文字型，解決豆腐塊及字體太小問題"""
+    font_path = "CustomFont.ttf"
+    if not os.path.exists(font_path):
+        print("📥 正在為伺服器自動下載中文字型檔 (Noto Sans CJK)...")
+        font_url = "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/TraditionalChineseHK/NotoSansCJKhk-Bold.otf"
+        try:
+            urllib.request.urlretrieve(font_url, font_path)
+            print("✅ 字型下載完成！")
+        except Exception as e:
+            print(f"⚠️ 字型下載失敗，嘗試備用來源: {e}")
+            alt_url = "https://raw.githubusercontent.com/everdrive/fceux/master_v2.2.3/output/fonts/wqy-zenhei.ttc"
+            try:
+                urllib.request.urlretrieve(alt_url, font_path)
+            except Exception as ex:
+                print(f"⚠️ 備用字型亦下載失敗: {ex}")
+    return font_path if os.path.exists(font_path) else None
+
 def create_title_cover(base_image_path, title_text, output_image_path):
-    """喺封面圖加上招牌同章節標題"""
+    """喺封面圖正中間加上放大版招牌同章節標題"""
     try:
+        font_file = download_chinese_font()
+        
         img = Image.open(base_image_path).convert("RGBA")
         width, height = img.size
         
-        # 建立半透明遮罩，確保文字清晰
+        # 建立半透明暗色黑底條帶，確保對比度
         overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
         
-        # 喺中間加半透明黑底條帶
-        rect_top = int(height * 0.35)
-        rect_bottom = int(height * 0.65)
-        draw.rectangle([(0, rect_top), (width, rect_bottom)], fill=(0, 0, 0, 160))
+        rect_top = int(height * 0.32)
+        rect_bottom = int(height * 0.68)
+        draw.rectangle([(0, rect_top), (width, rect_bottom)], fill=(0, 0, 0, 170))
         
         img = Image.alpha_composite(img, overlay).convert("RGB")
         draw = ImageDraw.Draw(img)
         
-        # 嘗試載入系統中文字型
-        font_path = "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"
-        if not os.path.exists(font_path):
-            font_path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
-            
-        try:
-            brand_font = ImageFont.truetype(font_path, int(height * 0.05))
-            title_font = ImageFont.truetype(font_path, int(height * 0.09))
-        except Exception:
+        # 設定超大高清字體 (比例大幅提升)
+        brand_font_size = int(height * 0.08)   # 招牌字體大小
+        title_font_size = int(height * 0.12)   # 標題大字大小
+        
+        if font_file:
+            brand_font = ImageFont.truetype(font_file, brand_font_size)
+            title_font = ImageFont.truetype(font_file, title_font_size)
+        else:
             brand_font = ImageFont.load_default()
             title_font = ImageFont.load_default()
             
         brand_text = "✨ 廣東話聖經劇場 ✨"
         
-        # 繪製招牌文字
+        # 繪製金色招牌 (正中間偏上)
         draw.text((width / 2, height * 0.42), brand_text, font=brand_font, fill=(255, 215, 0), anchor="mm")
-        # 繪製章節標題
-        draw.text((width / 2, height * 0.54), title_text, font=title_font, fill=(255, 255, 255), anchor="mm")
+        # 繪製純白加粗標題 (正中間偏下)
+        draw.text((width / 2, height * 0.58), title_text, font=title_font, fill=(255, 255, 255), anchor="mm")
         
         img.save(output_image_path)
-        print(f"🎨 已成功生成帶標題封面: {output_image_path}")
+        print(f"🎨 已成功生成高清居中標題封面: {output_image_path}")
         return True
     except Exception as e:
         print(f"⚠️ 生成標題封面失敗: {e}")
@@ -200,7 +219,7 @@ def generate_mp4(audio_file, video_output, text_file="input.txt"):
             print(f"⚠️ 找不到封面圖片 ({base_image})，跳過 MP4 合成。")
             return
 
-        # 抓取標題
+        # 抓取 input.txt 第一行標題
         title_text = "創世記 第一章"
         if os.path.exists(text_file):
             with open(text_file, 'r', encoding='utf-8') as f:
@@ -209,7 +228,7 @@ def generate_mp4(audio_file, video_output, text_file="input.txt"):
                 if title_match:
                     title_text = title_match.group(1).strip()
 
-        # 生成帶標題的新圖
+        # 生成標題封面
         final_cover = "final_cover_with_title.png"
         create_title_cover(base_image, title_text, final_cover)
         
