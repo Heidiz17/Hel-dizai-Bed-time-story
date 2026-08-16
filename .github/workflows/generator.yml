@@ -30,5 +30,7 @@ jobs:
         uses: actions/upload-artifact@v4.4.3
         with:
           name: MP3_Outputs
-          path: "genesis_ch1_*.mp3"
-          
+          path: |
+            genesis_ch1_Pboy.mp3
+            genesis_ch1_Pgirl.mp3
+            
