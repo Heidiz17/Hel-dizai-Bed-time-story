@@ -92,7 +92,7 @@ def create_title_cover(base_image_path, title_text, output_image_path):
             brand_font = ImageFont.load_default()
             title_font = ImageFont.load_default()
             
-        brand_text = "✨ 廣東話聖經劇場 ✨"
+        brand_text = "★ 廣東話聖經劇場 ★"
         
         # 繪製金色招牌 (正中間偏上)
         draw.text((width / 2, height * 0.42), brand_text, font=brand_font, fill=(255, 215, 0), anchor="mm")
