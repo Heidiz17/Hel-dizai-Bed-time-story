@@ -106,14 +106,14 @@ def create_title_cover(base_image_path, title_text, output_image_path):
         print(f"⚠️ 生成標題封面失敗: {e}")
         return False
 
-async def generate_tts(text, voice, output_mp3):
-    clean_text = re.sub(r'\[.*?\]', '', text).strip()
-    if not clean_text:
+async def generate_tts(ssml_text, voice, output_mp3):
+    """支援 SSML 格式輸入"""
+    if not ssml_text.strip():
         return False
 
     for attempt in range(8):
         try:
-            communicate = edge_tts.Communicate(clean_text, voice, rate='-20%')
+            communicate = edge_tts.Communicate(ssml_text, voice, rate='-20%')
             await communicate.save(output_mp3)
             if os.path.exists(output_mp3) and os.path.getsize(output_mp3) > 1000:
                 print(f"✅ [{voice}] 語音合成成功！")
@@ -122,6 +122,32 @@ async def generate_tts(text, voice, output_mp3):
             print(f"⚠️ [{voice}] 重試第 {attempt+1} 次...")
             await asyncio.sleep(3)
     return False
+
+def process_text_to_ssml(text_block):
+    """
+    將 txt 內文轉為符合停頓需求的 SSML：
+    1. 雙破折號 —— 轉為 <break time="600ms"/>
+    2. 換行 / Enter 轉為 <break time="1500ms"/>
+    """
+    lines = text_block.strip().split('\n')
+    ssml_lines = []
+    
+    for line in lines:
+        line_str = line.strip()
+        if not line_str:
+            continue
+        # 替換雙破折號為 600ms 停頓
+        line_ssml = re.sub(r'——', '<break time="600ms"/>', line_str)
+        # 單個破折號也處理
+        line_ssml = re.sub(r'—', '<break time="600ms"/>', line_ssml)
+        ssml_lines.append(line_ssml)
+    
+    # 每一句/段落結尾加上 1500ms 停頓
+    inner_ssml = '<break time="1500ms"/>'.join(ssml_lines) + '<break time="1500ms"/>'
+    
+    # 包裹在 speak 標籤中
+    full_ssml = f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="zh-HK">{full_ssml_content}</speak>' if 'full_ssml_content' in locals() else f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="zh-HK">{inner_ssml}</speak>'
+    return full_ssml
 
 def mix_chapter(text_file, gender, output_filename):
     with open(text_file, 'r', encoding='utf-8') as f:
@@ -161,7 +187,11 @@ def mix_chapter(text_file, gender, output_filename):
     for idx, (tag, text) in enumerate(sections):
         temp_file = f"temp_{gender}_{idx}.mp3"
         created_temp_files.append(temp_file)
-        success = asyncio.run(generate_tts(text, voice, temp_file))
+        
+        # 自動轉換成 SSML 格式，精準控制 600ms 同 1.5s 停頓
+        ssml_content = process_text_to_ssml(text)
+        
+        success = asyncio.run(generate_tts(ssml_content, voice, temp_file))
         
         if not success or not os.path.exists(temp_file):
             continue
