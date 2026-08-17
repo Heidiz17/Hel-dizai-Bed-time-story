@@ -112,8 +112,8 @@ async def generate_tts(text, voice, output_mp3):
 
     for attempt in range(8):
         try:
-            # 調整為 0.95x 速率 (rate='-05%')
-            communicate = edge_tts.Communicate(clean_text, voice, rate='-05%')
+            # 調整為 0.90x 速率 (rate='-10%')
+            communicate = edge_tts.Communicate(clean_text, voice, rate='-10%')
             await communicate.save(output_mp3)
             if os.path.exists(output_mp3) and os.path.getsize(output_mp3) > 1000:
                 print(f"✅ [{voice}] 語音合成成功！")
