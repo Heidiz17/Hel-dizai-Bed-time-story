@@ -103,30 +103,23 @@ def create_title_cover(base_image_path, title_text, output_image_path):
         return False
 
 async def generate_tts(text, voice, output_mp3):
-    # ⚡ 支援 SSML 語音標籤轉換：將稿件入面嘅 <break time="xxx"/> 轉成 edge-tts 支援嘅格式
-    # 先清除一般中括號標籤
-    clean_ssml = re.sub(r'\[.*?\]', '', text)
+    # 徹底清除所有中括號標籤以及帶有毫秒設定的 break 標籤，防止被朗讀出來
+    clean_text = re.sub(r'<break[^>]*?>', '', text)
+    clean_text = re.sub(r'\[.*?\]', '', clean_text).strip()
     
-    # 將 <break time="600ms"/> 或 <break time="1.5s"/> 轉化為 SSML 結構，讓微軟引擎識得停頓
-    # 透過包裝成完整 SSML 格式發送給 edge_tts
-    formatted_ssml = f"""<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="zh-HK">
-        <voice name="{voice}">
-            <prosody rate="-20%">
-                {clean_ssml}
-            </prosody>
-        </voice>
-    </speak>"""
+    if not clean_text:
+        return False
 
     for attempt in range(8):
         try:
-            # 透過 SSML 模式直接讓微軟引擎讀出停頓，並維持 -20% 黃金慢讀
-            communicate = edge_tts.Communicate(formatted_ssml, voice)
+            # 調整為 0.95x 速率 (rate='-05%')
+            communicate = edge_tts.Communicate(clean_text, voice, rate='-05%')
             await communicate.save(output_mp3)
             if os.path.exists(output_mp3) and os.path.getsize(output_mp3) > 1000:
-                print(f"✅ [{voice}] SSML 語音合成成功！")
+                print(f"✅ [{voice}] 語音合成成功！")
                 return True
         except Exception as e:
-            print(f"⚠️ [{voice}] 重試第 {attempt+1} 次 (錯誤: {e})...")
+            print(f"⚠️ [{voice}] 重試第 {attempt+1} 次...")
             await asyncio.sleep(3)
     return False
 
@@ -258,8 +251,10 @@ def generate_mp4(audio_file, video_output, text_file="input.txt"):
 
 if __name__ == "__main__":
     if os.path.exists("input.txt"):
+        # 1. 處理 P仔 (boy)
         mix_chapter("input.txt", 'boy', "temp_Pboy.mp3")
         generate_mp4("temp_Pboy.mp3", "genesis_ch1_Pboy.mp4", "input.txt")
 
+        # 2. 處理 P女 (girl)
         mix_chapter("input.txt", 'girl', "temp_Pgirl.mp3")
         generate_mp4("temp_Pgirl.mp3", "genesis_ch1_Pgirl.mp4", "input.txt")
