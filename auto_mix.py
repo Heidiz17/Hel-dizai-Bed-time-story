@@ -70,7 +70,6 @@ def create_title_cover(base_image_path, title_text, output_image_path):
         img = Image.open(base_image_path).convert("RGBA")
         width, height = img.size
         
-        # 建立半透明暗色黑底條帶，確保對比度
         overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
         
@@ -81,9 +80,8 @@ def create_title_cover(base_image_path, title_text, output_image_path):
         img = Image.alpha_composite(img, overlay).convert("RGB")
         draw = ImageDraw.Draw(img)
         
-        # 設定超大高清字體 (比例大幅提升)
-        brand_font_size = int(height * 0.08)   # 招牌字體大小
-        title_font_size = int(height * 0.12)   # 標題大字大小
+        brand_font_size = int(height * 0.08)
+        title_font_size = int(height * 0.12)
         
         if font_file:
             brand_font = ImageFont.truetype(font_file, brand_font_size)
@@ -94,9 +92,7 @@ def create_title_cover(base_image_path, title_text, output_image_path):
             
         brand_text = "★ 廣東話聖經劇場 ★"
         
-        # 繪製金色招牌 (正中間偏上)
         draw.text((width / 2, height * 0.42), brand_text, font=brand_font, fill=(255, 215, 0), anchor="mm")
-        # 繪製純白加粗標題 (正中間偏下)
         draw.text((width / 2, height * 0.58), title_text, font=title_font, fill=(255, 255, 255), anchor="mm")
         
         img.save(output_image_path)
@@ -106,48 +102,33 @@ def create_title_cover(base_image_path, title_text, output_image_path):
         print(f"⚠️ 生成標題封面失敗: {e}")
         return False
 
-async def generate_tts(ssml_text, voice, output_mp3):
-    """支援 SSML 格式輸入"""
-    if not ssml_text.strip():
-        return False
+async def generate_tts(text, voice, output_mp3):
+    # ⚡ 支援 SSML 語音標籤轉換：將稿件入面嘅 <break time="xxx"/> 轉成 edge-tts 支援嘅格式
+    # 先清除一般中括號標籤
+    clean_ssml = re.sub(r'\[.*?\]', '', text)
+    
+    # 將 <break time="600ms"/> 或 <break time="1.5s"/> 轉化為 SSML 結構，讓微軟引擎識得停頓
+    # 透過包裝成完整 SSML 格式發送給 edge_tts
+    formatted_ssml = f"""<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="zh-HK">
+        <voice name="{voice}">
+            <prosody rate="-20%">
+                {clean_ssml}
+            </prosody>
+        </voice>
+    </speak>"""
 
     for attempt in range(8):
         try:
-            communicate = edge_tts.Communicate(ssml_text, voice, rate='-20%')
+            # 透過 SSML 模式直接讓微軟引擎讀出停頓，並維持 -20% 黃金慢讀
+            communicate = edge_tts.Communicate(formatted_ssml, voice)
             await communicate.save(output_mp3)
             if os.path.exists(output_mp3) and os.path.getsize(output_mp3) > 1000:
-                print(f"✅ [{voice}] 語音合成成功！")
+                print(f"✅ [{voice}] SSML 語音合成成功！")
                 return True
         except Exception as e:
-            print(f"⚠️ [{voice}] 重試第 {attempt+1} 次...")
+            print(f"⚠️ [{voice}] 重試第 {attempt+1} 次 (錯誤: {e})...")
             await asyncio.sleep(3)
     return False
-
-def process_text_to_ssml(text_block):
-    """
-    將 txt 內文轉為符合停頓需求的 SSML：
-    1. 雙破折號 —— 轉為 <break time="600ms"/>
-    2. 換行 / Enter 轉為 <break time="1500ms"/>
-    """
-    lines = text_block.strip().split('\n')
-    ssml_lines = []
-    
-    for line in lines:
-        line_str = line.strip()
-        if not line_str:
-            continue
-        # 替換雙破折號為 600ms 停頓
-        line_ssml = re.sub(r'——', '<break time="600ms"/>', line_str)
-        # 單個破折號也處理
-        line_ssml = re.sub(r'—', '<break time="600ms"/>', line_ssml)
-        ssml_lines.append(line_ssml)
-    
-    # 每一句/段落結尾加上 1500ms 停頓
-    inner_ssml = '<break time="1500ms"/>'.join(ssml_lines) + '<break time="1500ms"/>'
-    
-    # 包裹在 speak 標籤中
-    full_ssml = f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="zh-HK">{full_ssml_content}</speak>' if 'full_ssml_content' in locals() else f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="zh-HK">{inner_ssml}</speak>'
-    return full_ssml
 
 def mix_chapter(text_file, gender, output_filename):
     with open(text_file, 'r', encoding='utf-8') as f:
@@ -187,11 +168,7 @@ def mix_chapter(text_file, gender, output_filename):
     for idx, (tag, text) in enumerate(sections):
         temp_file = f"temp_{gender}_{idx}.mp3"
         created_temp_files.append(temp_file)
-        
-        # 自動轉換成 SSML 格式，精準控制 600ms 同 1.5s 停頓
-        ssml_content = process_text_to_ssml(text)
-        
-        success = asyncio.run(generate_tts(ssml_content, voice, temp_file))
+        success = asyncio.run(generate_tts(text, voice, temp_file))
         
         if not success or not os.path.exists(temp_file):
             continue
@@ -249,7 +226,6 @@ def generate_mp4(audio_file, video_output, text_file="input.txt"):
             print(f"⚠️ 找不到封面圖片 ({base_image})，跳過 MP4 合成。")
             return
 
-        # 抓取 input.txt 第一行標題
         title_text = "創世記 第一章"
         if os.path.exists(text_file):
             with open(text_file, 'r', encoding='utf-8') as f:
@@ -258,7 +234,6 @@ def generate_mp4(audio_file, video_output, text_file="input.txt"):
                 if title_match:
                     title_text = title_match.group(1).strip()
 
-        # 生成標題封面
         final_cover = "final_cover_with_title.png"
         create_title_cover(base_image, title_text, final_cover)
         
@@ -283,10 +258,8 @@ def generate_mp4(audio_file, video_output, text_file="input.txt"):
 
 if __name__ == "__main__":
     if os.path.exists("input.txt"):
-        # 1. 處理 P仔 (boy)
         mix_chapter("input.txt", 'boy', "temp_Pboy.mp3")
         generate_mp4("temp_Pboy.mp3", "genesis_ch1_Pboy.mp4", "input.txt")
 
-        # 2. 處理 P女 (girl)
         mix_chapter("input.txt", 'girl', "temp_Pgirl.mp3")
         generate_mp4("temp_Pgirl.mp3", "genesis_ch1_Pgirl.mp4", "input.txt")
