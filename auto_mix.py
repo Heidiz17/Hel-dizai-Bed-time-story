@@ -70,6 +70,7 @@ def create_title_cover(base_image_path, title_text, output_image_path):
         img = Image.open(base_image_path).convert("RGBA")
         width, height = img.size
         
+        # 建立半透明暗色黑底條帶，確保對比度
         overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
         
@@ -80,8 +81,9 @@ def create_title_cover(base_image_path, title_text, output_image_path):
         img = Image.alpha_composite(img, overlay).convert("RGB")
         draw = ImageDraw.Draw(img)
         
-        brand_font_size = int(height * 0.08)
-        title_font_size = int(height * 0.12)
+        # 設定超大高清字體 (比例大幅提升)
+        brand_font_size = int(height * 0.08)   # 招牌字體大小
+        title_font_size = int(height * 0.12)   # 標題大字大小
         
         if font_file:
             brand_font = ImageFont.truetype(font_file, brand_font_size)
@@ -92,7 +94,9 @@ def create_title_cover(base_image_path, title_text, output_image_path):
             
         brand_text = "★ 廣東話聖經劇場 ★"
         
+        # 繪製金色招牌 (正中間偏上)
         draw.text((width / 2, height * 0.42), brand_text, font=brand_font, fill=(255, 215, 0), anchor="mm")
+        # 繪製純白加粗標題 (正中間偏下)
         draw.text((width / 2, height * 0.58), title_text, font=title_font, fill=(255, 255, 255), anchor="mm")
         
         img.save(output_image_path)
@@ -103,17 +107,13 @@ def create_title_cover(base_image_path, title_text, output_image_path):
         return False
 
 async def generate_tts(text, voice, output_mp3):
-    # 徹底清除所有中括號標籤以及帶有毫秒設定的 break 標籤，防止被朗讀出來
-    clean_text = re.sub(r'<break[^>]*?>', '', text)
-    clean_text = re.sub(r'\[.*?\]', '', clean_text).strip()
-    
+    clean_text = re.sub(r'\[.*?\]', '', text).strip()
     if not clean_text:
         return False
 
     for attempt in range(8):
         try:
-            # 調整為 0.90x 速率 (rate='-10%')
-            communicate = edge_tts.Communicate(clean_text, voice, rate='-10%')
+            communicate = edge_tts.Communicate(clean_text, voice, rate='-20%')
             await communicate.save(output_mp3)
             if os.path.exists(output_mp3) and os.path.getsize(output_mp3) > 1000:
                 print(f"✅ [{voice}] 語音合成成功！")
@@ -219,6 +219,7 @@ def generate_mp4(audio_file, video_output, text_file="input.txt"):
             print(f"⚠️ 找不到封面圖片 ({base_image})，跳過 MP4 合成。")
             return
 
+        # 抓取 input.txt 第一行標題
         title_text = "創世記 第一章"
         if os.path.exists(text_file):
             with open(text_file, 'r', encoding='utf-8') as f:
@@ -227,6 +228,7 @@ def generate_mp4(audio_file, video_output, text_file="input.txt"):
                 if title_match:
                     title_text = title_match.group(1).strip()
 
+        # 生成標題封面
         final_cover = "final_cover_with_title.png"
         create_title_cover(base_image, title_text, final_cover)
         
