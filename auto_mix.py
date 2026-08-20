@@ -45,32 +45,22 @@ VOICE_MAP = {
 }
 
 def download_chinese_font():
-    """自動下載標準高清中文字型，解決豆腐塊及字體太小問題"""
     font_path = "CustomFont.ttf"
     if not os.path.exists(font_path):
-        print("📥 正在為伺服器自動下載中文字型檔 (Noto Sans CJK)...")
+        print("📥 正在下載中文字型檔 (Noto Sans CJK)...")
         font_url = "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/TraditionalChineseHK/NotoSansCJKhk-Bold.otf"
         try:
             urllib.request.urlretrieve(font_url, font_path)
-            print("✅ 字型下載完成！")
-        except Exception as e:
-            print(f"⚠️ 字型下載失敗，嘗試備用來源: {e}")
-            alt_url = "https://raw.githubusercontent.com/everdrive/fceux/master_v2.2.3/output/fonts/wqy-zenhei.ttc"
-            try:
-                urllib.request.urlretrieve(alt_url, font_path)
-            except Exception as ex:
-                print(f"⚠️ 備用字型亦下載失敗: {ex}")
+        except Exception:
+            pass
     return font_path if os.path.exists(font_path) else None
 
 def create_title_cover(base_image_path, title_text, output_image_path):
-    """喺封面圖正中間加上放大版招牌同章節標題"""
     try:
         font_file = download_chinese_font()
-        
         img = Image.open(base_image_path).convert("RGBA")
         width, height = img.size
         
-        # 建立半透明暗色黑底條帶，確保對比度
         overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
         
@@ -81,9 +71,8 @@ def create_title_cover(base_image_path, title_text, output_image_path):
         img = Image.alpha_composite(img, overlay).convert("RGB")
         draw = ImageDraw.Draw(img)
         
-        # 設定超大高清字體 (比例大幅提升)
-        brand_font_size = int(height * 0.08)   # 招牌字體大小
-        title_font_size = int(height * 0.12)   # 標題大字大小
+        brand_font_size = int(height * 0.08)
+        title_font_size = int(height * 0.12)
         
         if font_file:
             brand_font = ImageFont.truetype(font_file, brand_font_size)
@@ -93,17 +82,12 @@ def create_title_cover(base_image_path, title_text, output_image_path):
             title_font = ImageFont.load_default()
             
         brand_text = "★ 廣東話聖經劇場 ★"
-        
-        # 繪製金色招牌 (正中間偏上)
         draw.text((width / 2, height * 0.42), brand_text, font=brand_font, fill=(255, 215, 0), anchor="mm")
-        # 繪製純白加粗標題 (正中間偏下)
         draw.text((width / 2, height * 0.58), title_text, font=title_font, fill=(255, 255, 255), anchor="mm")
         
         img.save(output_image_path)
-        print(f"🎨 已成功生成高清居中標題封面: {output_image_path}")
         return True
     except Exception as e:
-        print(f"⚠️ 生成標題封面失敗: {e}")
         return False
 
 async def generate_tts(text, voice, output_mp3):
@@ -116,11 +100,9 @@ async def generate_tts(text, voice, output_mp3):
             communicate = edge_tts.Communicate(clean_text, voice, rate='-20%')
             await communicate.save(output_mp3)
             if os.path.exists(output_mp3) and os.path.getsize(output_mp3) > 1000:
-                print(f"✅ [{voice}] 語音合成成功！")
                 return True
-        except Exception as e:
-            print(f"⚠️ [{voice}] 重試第 {attempt+1} 次...")
-            await asyncio.sleep(3)
+        except Exception:
+            await asyncio.sleep(2)
     return False
 
 def mix_chapter(text_file, gender, output_filename):
@@ -129,109 +111,100 @@ def mix_chapter(text_file, gender, output_filename):
 
     voice = VOICE_MAP.get(gender, 'zh-HK-WanLungNeural')
     
-    # 解析 BGM 轉場、SFX 段落同 TITLE
-    combined_elements = []
+    # 按行嚴格順序解析
+    lines = raw_content.split('\n')
+    current_bgm = 'calm' # 預設第一段為 calm
+    current_sfx = None
     
-    # 1. 偵測段落 BGM 轉場標籤
-    bgm_sections = []
-    current_bgm_type = 'calm'
-    
-    # 2. 偵測段落 SFX 段落標籤
-    pattern_sfx = r'(\[雷雨\]|\[雷聲\]|\[雨聲雷鳴\]|\[風雨雷電\]|\[下雨\]|\[雨聲\]|\[海洋\]|\[海浪\]|\[海浪風鈴\]|\[柴火\]|\[溫暖\]|\[森林\]|\[天地\]|\[森林鳥鳴\]|\[風鈴\]|\[海鳥\]|\[溪流\]|\[流水\]|\[戰爭\]|\[交戰\]|\[洞穴\]|\[水滴\])'
-    parts_sfx = re.split(pattern_sfx, raw_content)
-    
-    combined_voice_sfx = []
-    for part in parts_sfx:
-        if not part.strip(): continue
-        
-        # 3. 偵測段落 BGM 段落標籤
-        bgm_match = re.search(r'\[BGM\s*:\s*(happy|calm|sad)\]', part, re.IGNORECASE)
-        if bgm_match:
-            current_bgm_type = bgm_match.group(1).lower()
-            print(f"🎵 新版偵測：發現 BGM 轉場 -> {current_bgm_type}")
-            # 去除 part 入面嘅 標籤
-            clean_part = re.sub(r'\[BGM\s*:\s*(happy|calm|sad)\]', '', part, re.IGNORECASE).strip()
-            # 將剩餘嘅 clean_part 用 SFX 段落標籤記低音樂
-            # 由於 part 本身有可能仲帶有 SFX 段落標籤，所以要重新解析
-            if clean_part:
-                sub_parts_sfx = re.split(pattern_sfx, clean_part)
-                for sub_part in sub_parts_sfx:
-                    if not sub_part.strip(): continue
-                    if sub_part in TAG_AUDIO_MAP:
-                        # part 本身就係 SFX 段落標籤
-                        combined_voice_sfx.append((sub_part, None, current_bgm_type))
-                    else:
-                        combined_voice_sfx.append((None, sub_part.strip(), current_bgm_type))
-        elif part in TAG_AUDIO_MAP:
-             # part 本身就係 SFX 段落標籤
-             combined_voice_sfx.append((part, None, current_bgm_type))
-        elif not re.match(r'\[TITLE\s*:', part, re.IGNORECASE):
-             combined_voice_sfx.append((None, part.strip(), current_bgm_type))
+    parsed_tasks = [] # 每筆資料格式: (bgm_type, sfx_tag, text)
 
-    if not combined_voice_sfx:
-        combined_voice_sfx = [(None, raw_content.strip(), 'calm')]
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        
+        # 過濾 TITLE
+        if re.match(r'\[TITLE\s*:', line, re.IGNORECASE):
+            continue
+            
+        # 1. 精準順序偵測 BGM 切換
+        bgm_match = re.search(r'\[BGM\s*:\s*(happy|calm|sad)\]', line, re.IGNORECASE)
+        if bgm_match:
+            current_bgm = bgm_match.group(1).lower()
+            print(f"🎵 順序解析：發現 BGM 轉場 -> 切換為 [{current_bgm}]")
+            line = re.sub(r'\[BGM\s*:\s*(happy|calm|sad)\]', '', line, re.IGNORECASE).strip()
+
+        if not line:
+            continue
+
+        # 2. 精準順序偵測 SFX 切換
+        sfx_match = re.search(r'(\[.*?\])', line)
+        if sfx_match:
+            tag = sfx_match.group(1)
+            if tag in TAG_AUDIO_MAP:
+                current_sfx = tag
+                line = line.replace(tag, '').strip()
+
+        clean_text = re.sub(r'\[.*?\]', '', line).strip()
+        if clean_text:
+            parsed_tasks.append((current_bgm, current_sfx, clean_text))
 
     combined_voice = AudioSegment.silent(duration=0)
     combined_sfx = AudioSegment.silent(duration=0)
-    combined_bgm = AudioSegment.silent(duration=0) # 新版用分段音樂
-
+    combined_bgm = AudioSegment.silent(duration=0)
     created_temp_files = []
 
-    print(f"🔊 升級版程式：正在處理分段音樂轉場...")
-    current_active_bgm = None
-    bgm_filename = None
+    print(f"🔊 開始進行精準時間軸混音 (共 {len(parsed_tasks)} 段)...")
 
-    for idx, (tag_sfx, text_tts, tag_bgm_type) in enumerate(combined_voice_sfx):
-        seg_dur = 0
+    for idx, (bgm_type, sfx_tag, text) in enumerate(parsed_tasks):
+        temp_file = f"temp_{gender}_{idx}.mp3"
+        created_temp_files.append(temp_file)
         
-        # 處理 TTS 分段
-        if text_tts:
-            temp_file = f"temp_{gender}_{idx}.mp3"
-            created_temp_files.append(temp_file)
-            success = asyncio.run(generate_tts(text_tts, voice, temp_file))
-            
-            if success and os.path.exists(temp_file):
-                raw_voice = AudioSegment.from_file(temp_file)
-                combined_voice += raw_voice + AudioSegment.silent(duration=1500)
-                seg_dur = len(raw_voice) + 1500
+        success = asyncio.run(generate_tts(text, voice, temp_file))
+        if not success or not os.path.exists(temp_file):
+            continue
+
+        raw_voice = AudioSegment.from_file(temp_file)
+        seg_dur = len(raw_voice) + 1500  # 每句語音時間 + 1.5秒停頓
         
-        # 處理 SFX 分段
+        # 1. 疊加語音
+        combined_voice += raw_voice + AudioSegment.silent(duration=1500)
+
+        # 2. 疊加當前 SFX
         seg_sfx = AudioSegment.silent(duration=seg_dur)
-        if tag_sfx and tag_sfx in TAG_AUDIO_MAP:
-            sfx_filename = TAG_AUDIO_MAP[tag_sfx]
-            if os.path.exists(sfx_filename):
-                snd = AudioSegment.from_file(sfx_filename)
+        if sfx_tag and sfx_tag in TAG_AUDIO_MAP:
+            sfx_file = TAG_AUDIO_MAP[sfx_tag]
+            if os.path.exists(sfx_file):
+                snd = AudioSegment.from_file(sfx_file)
                 snd_looped = (snd * (int(seg_dur / len(snd)) + 1))[:seg_dur] - 22
-                seg_sfx = snd_looped.fade_in(500).fade_out(1000)
+                seg_sfx = snd_looped.fade_in(300).fade_out(800)
         combined_sfx += seg_sfx
-        
-        # 處理 BGM 分段
-        bgm_music_track = AudioSegment.silent(duration=seg_dur)
-        music_filename = MUSIC_MAP.get(tag_bgm_type, 'music_calm.mp3')
-        if music_filename and os.path.exists(music_filename):
-            bgm_music = AudioSegment.from_file(music_filename)
-            
-            target_loudness = -22.0
-            change_in_dBFS = target_loudness - bgm_music.dBFS
-            bgm_music = bgm_music.apply_gain(change_in_dBFS)
-            
-            music_looped = (bgm_music * (int(seg_dur / len(bgm_music)) + 1))[:seg_dur]
-            bgm_music_track = music_looped.fade_out(1500)
-        combined_bgm += bgm_music_track
 
-    # 清理臨時音檔
+        # 3. 精準疊加當前句子的 BGM (該段是 calm 就用 calm，是 sad 就用 sad)
+        seg_bgm = AudioSegment.silent(duration=seg_dur)
+        bgm_file = MUSIC_MAP.get(bgm_type, 'music_calm.mp3')
+        if bgm_file and os.path.exists(bgm_file):
+            bg_music = AudioSegment.from_file(bgm_file)
+            target_loudness = -22.0
+            bg_music = bg_music.apply_gain(target_loudness - bg_music.dBFS)
+            
+            music_looped = (bg_music * (int(seg_dur / len(bg_music)) + 1))[:seg_dur]
+            seg_bgm = music_looped.fade_in(300).fade_out(300)
+        combined_bgm += seg_bgm
+
+    # 清理臨時檔
     for t_file in created_temp_files:
         if os.path.exists(t_file):
             os.remove(t_file)
 
     if len(combined_voice) == 0:
-        print(f"❌ {gender} ({voice}) 語音生成失敗。")
+        print(f"❌ {gender} 語音合成失敗。")
         return
 
-    # 由於 combined_bgm 段落音樂係分開 looped 嘅，佢哋轉場會好流暢
-    final_mix = combined_bgm.overlay(combined_sfx).overlay(combined_voice, position=1000)
+    total_dur = len(combined_voice) + 2000
+    final_mix = combined_bgm[:total_dur].overlay(combined_sfx[:total_dur]).overlay(combined_voice, position=1000)
     final_mix.export(output_filename, format="mp3")
-    print(f"🎉 升級版臨時音訊混音完成: {output_filename}")
+    print(f"🎉 成功完成【開局 Calm、中途 Sad】動態混音檔: {output_filename}")
 
 def generate_mp4(audio_file, video_output, text_file="input.txt"):
     try:
@@ -239,11 +212,9 @@ def generate_mp4(audio_file, video_output, text_file="input.txt"):
         
         base_image = 'cover.png' if os.path.exists('cover.png') else 'default_cover.png'
         if not os.path.exists(base_image):
-            print(f"⚠️ 找不到封面圖片 ({base_image})，跳過 MP4 合成。")
             return
 
-        # 抓取 input.txt 第一行標題
-        title_text = "創世記 第一章"
+        title_text = "創世記 第六章"
         if os.path.exists(text_file):
             with open(text_file, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -251,35 +222,29 @@ def generate_mp4(audio_file, video_output, text_file="input.txt"):
                 if title_match:
                     title_text = title_match.group(1).strip()
 
-        # 生成標題封面
         final_cover = "final_cover_with_title.png"
         create_title_cover(base_image, title_text, final_cover)
-        
         used_image = final_cover if os.path.exists(final_cover) else base_image
 
-        print(f"🎬 正在合成 MP4 影片，使用標題封面: {used_image}...")
         audio_clip = AudioFileClip(audio_file)
         video_clip = ImageClip(used_image, duration=audio_clip.duration)
         video_clip.audio = audio_clip
         
         video_clip.write_videofile(video_output, fps=24, codec='libx264', audio_codec='aac')
-        print(f"✅ 成功生成終極 MP4 影片: {video_output}")
+        print(f"✅ 終極 MP4 影片生成成功: {video_output}")
 
         audio_clip.close()
         video_clip.close()
         if os.path.exists(audio_file):
             os.remove(audio_file)
-            print(f"🧹 已自動清理臨時音檔: {audio_file}")
 
     except Exception as e:
         print(f"⚠️ MP4 合成失敗: {e}")
 
 if __name__ == "__main__":
     if os.path.exists("input.txt"):
-        # 1. 處理 P仔 (boy)
         mix_chapter("input.txt", 'boy', "temp_Pboy.mp3")
-        generate_mp4("temp_Pboy.mp3", "genesis_ch1_Pboy.mp4", "input.txt")
+        generate_mp4("temp_Pboy.mp3", "genesis_ch6_Pboy.mp4", "input.txt")
 
-        # 2. 處理 P女 (girl)
         mix_chapter("input.txt", 'girl', "temp_Pgirl.mp3")
-        generate_mp4("temp_Pgirl.mp3", "genesis_ch1_Pgirl.mp4", "input.txt")
+        generate_mp4("temp_Pgirl.mp3", "genesis_ch6_Pgirl.mp4", "input.txt")
