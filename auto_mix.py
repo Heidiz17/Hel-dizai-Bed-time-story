@@ -110,34 +110,26 @@ def mix_chapter(text_file, gender, output_filename):
         raw_content = f.read()
 
     voice = VOICE_MAP.get(gender, 'zh-HK-WanLungNeural')
-    
-    # 按行嚴格順序解析
     lines = raw_content.split('\n')
-    current_bgm = 'calm' # 預設第一段為 calm
+    
+    current_bgm = 'calm'
     current_sfx = None
     
-    parsed_tasks = [] # 每筆資料格式: (bgm_type, sfx_tag, text)
+    parsed_lines = [] # (bgm_type, sfx_tag, text)
 
     for line in lines:
         line = line.strip()
-        if not line:
-            continue
-        
-        # 過濾 TITLE
-        if re.match(r'\[TITLE\s*:', line, re.IGNORECASE):
+        if not line or re.match(r'\[TITLE\s*:', line, re.IGNORECASE):
             continue
             
-        # 1. 精準順序偵測 BGM 切換
         bgm_match = re.search(r'\[BGM\s*:\s*(happy|calm|sad)\]', line, re.IGNORECASE)
         if bgm_match:
             current_bgm = bgm_match.group(1).lower()
-            print(f"🎵 順序解析：發現 BGM 轉場 -> 切換為 [{current_bgm}]")
             line = re.sub(r'\[BGM\s*:\s*(happy|calm|sad)\]', '', line, re.IGNORECASE).strip()
 
         if not line:
             continue
 
-        # 2. 精準順序偵測 SFX 切換
         sfx_match = re.search(r'(\[.*?\])', line)
         if sfx_match:
             tag = sfx_match.group(1)
@@ -147,16 +139,18 @@ def mix_chapter(text_file, gender, output_filename):
 
         clean_text = re.sub(r'\[.*?\]', '', line).strip()
         if clean_text:
-            parsed_tasks.append((current_bgm, current_sfx, clean_text))
+            parsed_lines.append((current_bgm, current_sfx, clean_text))
 
     combined_voice = AudioSegment.silent(duration=0)
     combined_sfx = AudioSegment.silent(duration=0)
-    combined_bgm = AudioSegment.silent(duration=0)
+    
+    # 用嚟精準記錄「哪一段時間需要哪一種 BGM」
+    bgm_timeline = [] # (dur_ms, bgm_type)
     created_temp_files = []
 
-    print(f"🔊 開始進行精準時間軸混音 (共 {len(parsed_tasks)} 段)...")
+    print(f"🔊 正在進行連貫式 BGM 時間軸合成 (共 {len(parsed_lines)} 行)...")
 
-    for idx, (bgm_type, sfx_tag, text) in enumerate(parsed_tasks):
+    for idx, (bgm_type, sfx_tag, text) in enumerate(parsed_lines):
         temp_file = f"temp_{gender}_{idx}.mp3"
         created_temp_files.append(temp_file)
         
@@ -165,12 +159,12 @@ def mix_chapter(text_file, gender, output_filename):
             continue
 
         raw_voice = AudioSegment.from_file(temp_file)
-        seg_dur = len(raw_voice) + 1500  # 每句語音時間 + 1.5秒停頓
+        seg_dur = len(raw_voice) + 1500
         
         # 1. 疊加語音
         combined_voice += raw_voice + AudioSegment.silent(duration=1500)
 
-        # 2. 疊加當前 SFX
+        # 2. 獨立疊加當前音效
         seg_sfx = AudioSegment.silent(duration=seg_dur)
         if sfx_tag and sfx_tag in TAG_AUDIO_MAP:
             sfx_file = TAG_AUDIO_MAP[sfx_tag]
@@ -180,19 +174,9 @@ def mix_chapter(text_file, gender, output_filename):
                 seg_sfx = snd_looped.fade_in(300).fade_out(800)
         combined_sfx += seg_sfx
 
-        # 3. 精準疊加當前句子的 BGM (該段是 calm 就用 calm，是 sad 就用 sad)
-        seg_bgm = AudioSegment.silent(duration=seg_dur)
-        bgm_file = MUSIC_MAP.get(bgm_type, 'music_calm.mp3')
-        if bgm_file and os.path.exists(bgm_file):
-            bg_music = AudioSegment.from_file(bgm_file)
-            target_loudness = -22.0
-            bg_music = bg_music.apply_gain(target_loudness - bg_music.dBFS)
-            
-            music_looped = (bg_music * (int(seg_dur / len(bg_music)) + 1))[:seg_dur]
-            seg_bgm = music_looped.fade_in(300).fade_out(300)
-        combined_bgm += seg_bgm
+        # 3. 記錄 BGM 時間長度（唔好喺呢度剪斷 BGM！）
+        bgm_timeline.append((seg_dur, bgm_type))
 
-    # 清理臨時檔
     for t_file in created_temp_files:
         if os.path.exists(t_file):
             os.remove(t_file)
@@ -201,10 +185,38 @@ def mix_chapter(text_file, gender, output_filename):
         print(f"❌ {gender} 語音合成失敗。")
         return
 
+    # 4. 【核心突破】：將連續相同 BGM 類型嘅時間「合併成大區塊」，順暢播放不重頭！
+    bgm_blocks = [] # (total_dur, bgm_type)
+    if bgm_timeline:
+        curr_dur, curr_type = bgm_timeline[0]
+        for dur, b_type in bgm_timeline[1:]:
+            if b_type == curr_type:
+                curr_dur += dur
+            else:
+                bgm_blocks.append((curr_dur, curr_type))
+                curr_dur = dur
+                curr_type = b_type
+        bgm_blocks.append((curr_dur, curr_type))
+
+    combined_bgm = AudioSegment.silent(duration=0)
+    for block_dur, b_type in bgm_blocks:
+        bgm_file = MUSIC_MAP.get(b_type, 'music_calm.mp3')
+        if bgm_file and os.path.exists(bgm_file):
+            bg_music = AudioSegment.from_file(bgm_file)
+            target_loudness = -22.0
+            bg_music = bg_music.apply_gain(target_loudness - bg_music.dBFS)
+            
+            # 長播 Seamless Loop，中間音效完全唔會切斷佢！
+            music_looped = (bg_music * (int(block_dur / len(bg_music)) + 1))[:block_dur]
+            block_bgm = music_looped.fade_in(800).fade_out(800)
+            combined_bgm += block_bgm
+        else:
+            combined_bgm += AudioSegment.silent(duration=block_dur)
+
     total_dur = len(combined_voice) + 2000
     final_mix = combined_bgm[:total_dur].overlay(combined_sfx[:total_dur]).overlay(combined_voice, position=1000)
     final_mix.export(output_filename, format="mp3")
-    print(f"🎉 成功完成【開局 Calm、中途 Sad】動態混音檔: {output_filename}")
+    print(f"🎉 成功完成【BGM 獨立長播、音效不卡頓】終極混音檔: {output_filename}")
 
 def generate_mp4(audio_file, video_output, text_file="input.txt"):
     try:
