@@ -127,59 +127,99 @@ def mix_chapter(text_file, gender, output_filename):
     with open(text_file, 'r', encoding='utf-8') as f:
         raw_content = f.read()
 
-    bg_music_type = 'calm'
-    bgm_match = re.search(r'\[BGM\s*:\s*(happy|calm|sad)\]', raw_content, re.IGNORECASE)
-    if bgm_match:
-        bg_music_type = bgm_match.group(1).lower()
-
-    print(f"🎵 偵測到背景音樂類型: {bg_music_type}")
     voice = VOICE_MAP.get(gender, 'zh-HK-WanLungNeural')
     
-    pattern = r'(\[.*?\])'
-    parts = re.split(pattern, raw_content)
+    # 解析 BGM 轉場、SFX 段落同 TITLE
+    combined_elements = []
     
-    sections = []
-    current_tag = None
+    # 1. 偵測段落 BGM 轉場標籤
+    bgm_sections = []
+    current_bgm_type = 'calm'
     
-    for part in parts:
-        if not part.strip():
-            continue
-        if re.match(r'\[BGM\s*:', part, re.IGNORECASE) or re.match(r'\[TITLE\s*:', part, re.IGNORECASE):
-            continue
-        if part in TAG_AUDIO_MAP or part.startswith('['):
-            current_tag = part
-        else:
-            sections.append((current_tag, part.strip()))
+    # 2. 偵測段落 SFX 段落標籤
+    pattern_sfx = r'(\[雷雨\]|\[雷聲\]|\[雨聲雷鳴\]|\[風雨雷電\]|\[下雨\]|\[雨聲\]|\[海洋\]|\[海浪\]|\[海浪風鈴\]|\[柴火\]|\[溫暖\]|\[森林\]|\[天地\]|\[森林鳥鳴\]|\[風鈴\]|\[海鳥\]|\[溪流\]|\[流水\]|\[戰爭\]|\[交戰\]|\[洞穴\]|\[水滴\])'
+    parts_sfx = re.split(pattern_sfx, raw_content)
+    
+    combined_voice_sfx = []
+    for part in parts_sfx:
+        if not part.strip(): continue
+        
+        # 3. 偵測段落 BGM 段落標籤
+        bgm_match = re.search(r'\[BGM\s*:\s*(happy|calm|sad)\]', part, re.IGNORECASE)
+        if bgm_match:
+            current_bgm_type = bgm_match.group(1).lower()
+            print(f"🎵 新版偵測：發現 BGM 轉場 -> {current_bgm_type}")
+            # 去除 part 入面嘅 標籤
+            clean_part = re.sub(r'\[BGM\s*:\s*(happy|calm|sad)\]', '', part, re.IGNORECASE).strip()
+            # 將剩餘嘅 clean_part 用 SFX 段落標籤記低音樂
+            # 由於 part 本身有可能仲帶有 SFX 段落標籤，所以要重新解析
+            if clean_part:
+                sub_parts_sfx = re.split(pattern_sfx, clean_part)
+                for sub_part in sub_parts_sfx:
+                    if not sub_part.strip(): continue
+                    if sub_part in TAG_AUDIO_MAP:
+                        # part 本身就係 SFX 段落標籤
+                        combined_voice_sfx.append((sub_part, None, current_bgm_type))
+                    else:
+                        combined_voice_sfx.append((None, sub_part.strip(), current_bgm_type))
+        elif part in TAG_AUDIO_MAP:
+             # part 本身就係 SFX 段落標籤
+             combined_voice_sfx.append((part, None, current_bgm_type))
+        elif not re.match(r'\[TITLE\s*:', part, re.IGNORECASE):
+             combined_voice_sfx.append((None, part.strip(), current_bgm_type))
 
-    if not sections:
-        sections = [(None, raw_content.strip())]
+    if not combined_voice_sfx:
+        combined_voice_sfx = [(None, raw_content.strip(), 'calm')]
 
     combined_voice = AudioSegment.silent(duration=0)
     combined_sfx = AudioSegment.silent(duration=0)
+    combined_bgm = AudioSegment.silent(duration=0) # 新版用分段音樂
+
     created_temp_files = []
 
-    for idx, (tag, text) in enumerate(sections):
-        temp_file = f"temp_{gender}_{idx}.mp3"
-        created_temp_files.append(temp_file)
-        success = asyncio.run(generate_tts(text, voice, temp_file))
-        
-        if not success or not os.path.exists(temp_file):
-            continue
+    print(f"🔊 升級版程式：正在處理分段音樂轉場...")
+    current_active_bgm = None
+    bgm_filename = None
 
-        raw_voice = AudioSegment.from_file(temp_file)
-        seg_dur = len(raw_voice) + 1500
+    for idx, (tag_sfx, text_tts, tag_bgm_type) in enumerate(combined_voice_sfx):
+        seg_dur = 0
         
-        a_file = TAG_AUDIO_MAP.get(tag, None)
+        # 處理 TTS 分段
+        if text_tts:
+            temp_file = f"temp_{gender}_{idx}.mp3"
+            created_temp_files.append(temp_file)
+            success = asyncio.run(generate_tts(text_tts, voice, temp_file))
+            
+            if success and os.path.exists(temp_file):
+                raw_voice = AudioSegment.from_file(temp_file)
+                combined_voice += raw_voice + AudioSegment.silent(duration=1500)
+                seg_dur = len(raw_voice) + 1500
+        
+        # 處理 SFX 分段
         seg_sfx = AudioSegment.silent(duration=seg_dur)
-
-        if a_file and os.path.exists(a_file):
-            snd = AudioSegment.from_file(a_file)
-            snd_looped = (snd * (int(seg_dur / len(snd)) + 1))[:seg_dur] - 22
-            seg_sfx = snd_looped.fade_in(500).fade_out(1000)
-
-        combined_voice += raw_voice + AudioSegment.silent(duration=1500)
+        if tag_sfx and tag_sfx in TAG_AUDIO_MAP:
+            sfx_filename = TAG_AUDIO_MAP[tag_sfx]
+            if os.path.exists(sfx_filename):
+                snd = AudioSegment.from_file(sfx_filename)
+                snd_looped = (snd * (int(seg_dur / len(snd)) + 1))[:seg_dur] - 22
+                seg_sfx = snd_looped.fade_in(500).fade_out(1000)
         combined_sfx += seg_sfx
+        
+        # 處理 BGM 分段
+        bgm_music_track = AudioSegment.silent(duration=seg_dur)
+        music_filename = MUSIC_MAP.get(tag_bgm_type, 'music_calm.mp3')
+        if music_filename and os.path.exists(music_filename):
+            bgm_music = AudioSegment.from_file(music_filename)
+            
+            target_loudness = -22.0
+            change_in_dBFS = target_loudness - bgm_music.dBFS
+            bgm_music = bgm_music.apply_gain(change_in_dBFS)
+            
+            music_looped = (bgm_music * (int(seg_dur / len(bgm_music)) + 1))[:seg_dur]
+            bgm_music_track = music_looped.fade_out(1500)
+        combined_bgm += bgm_music_track
 
+    # 清理臨時音檔
     for t_file in created_temp_files:
         if os.path.exists(t_file):
             os.remove(t_file)
@@ -188,27 +228,10 @@ def mix_chapter(text_file, gender, output_filename):
         print(f"❌ {gender} ({voice}) 語音生成失敗。")
         return
 
-    total_dur = len(combined_voice) + 4000
-    
-    music_track = AudioSegment.silent(duration=total_dur)
-    music_filename = MUSIC_MAP.get(bg_music_type, 'music_calm.mp3')
-    
-    if music_filename and os.path.exists(music_filename):
-        print(f"🔊 正在混入背景音樂: {music_filename}")
-        bg_music = AudioSegment.from_file(music_filename)
-        
-        target_loudness = -22.0
-        change_in_dBFS = target_loudness - bg_music.dBFS
-        bg_music = bg_music.apply_gain(change_in_dBFS)
-        
-        music_looped = (bg_music * (int(total_dur / len(bg_music)) + 1))[:total_dur]
-        music_track = music_looped.fade_out(4000)
-    else:
-        print(f"⚠️ 找不到音樂檔: {music_filename}")
-
-    final_mix = music_track.overlay(combined_sfx[:total_dur]).overlay(combined_voice, position=1000)
+    # 由於 combined_bgm 段落音樂係分開 looped 嘅，佢哋轉場會好流暢
+    final_mix = combined_bgm.overlay(combined_sfx).overlay(combined_voice, position=1000)
     final_mix.export(output_filename, format="mp3")
-    print(f"🎉 臨時音訊混音完成: {output_filename}")
+    print(f"🎉 升級版臨時音訊混音完成: {output_filename}")
 
 def generate_mp4(audio_file, video_output, text_file="input.txt"):
     try:
